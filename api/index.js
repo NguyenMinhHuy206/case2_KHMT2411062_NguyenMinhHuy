@@ -9,13 +9,19 @@ const scryptAsync = promisify(scrypt);
 
 app.use(express.json());
 
+// Lưu tài khoản tạm thời trong RAM
 const users = [];
 
+// Kiểm tra Backend
 app.get('/', (req, res) => {
-  res.json({ message: 'TaskManager API running' });
+  res.json({
+    message: 'TaskManager API running successfully'
+  });
 });
 
-// Chức năng đăng ký tài khoản
+// =============================
+// A.1 - ĐĂNG KÝ TÀI KHOẢN
+// =============================
 app.post('/api/register', async (req, res) => {
   try {
     const { name, email, password } = req.body || {};
@@ -23,7 +29,10 @@ app.post('/api/register', async (req, res) => {
     if (
       typeof name !== 'string' ||
       typeof email !== 'string' ||
-      typeof password !== 'string'
+      typeof password !== 'string' ||
+      !name.trim() ||
+      !email.trim() ||
+      !password
     ) {
       return res.status(400).json({
         message: 'Vui lòng nhập đầy đủ thông tin'
@@ -32,12 +41,6 @@ app.post('/api/register', async (req, res) => {
 
     const cleanName = name.trim();
     const cleanEmail = email.trim().toLowerCase();
-
-    if (!cleanName || !cleanEmail || !password) {
-      return res.status(400).json({
-        message: 'Vui lòng nhập đầy đủ thông tin'
-      });
-    }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({
@@ -72,6 +75,67 @@ app.post('/api/register', async (req, res) => {
 
     return res.status(201).json({
       message: 'Đăng ký thành công',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: 'Lỗi máy chủ'
+    });
+  }
+});
+
+// =============================
+// A.2 - ĐĂNG NHẬP TÀI KHOẢN
+// =============================
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        message: 'Vui lòng nhập email và mật khẩu'
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    const user = users.find(
+      user => user.email === cleanEmail
+    );
+
+    if (!user) {
+      return res.status(401).json({
+        message: 'Email hoặc mật khẩu không chính xác'
+      });
+    }
+
+    const [salt, savedHash] = user.passwordHash.split(':');
+
+    const enteredHash = await scryptAsync(password, salt, 64);
+    const expectedHash = Buffer.from(savedHash, 'hex');
+
+    const valid =
+      enteredHash.length === expectedHash.length &&
+      timingSafeEqual(enteredHash, expectedHash);
+
+    if (!valid) {
+      return res.status(401).json({
+        message: 'Email hoặc mật khẩu không chính xác'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Đăng nhập thành công',
       user: {
         id: user.id,
         name: user.name,
