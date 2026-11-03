@@ -153,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Text('Xin chào, ${user?['name']??''}!',textAlign:TextAlign.center,style:const TextStyle(fontSize:23,fontWeight:FontWeight.bold)),
     const SizedBox(height:8),Text('${user?['email']??''}',textAlign:TextAlign.center),const SizedBox(height:32),
     Card(child:ListTile(leading:const Icon(Icons.person_outline),title:const Text('Xem và cập nhật thông tin cá nhân'),trailing:const Icon(Icons.chevron_right),onTap:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const ProfileScreen()));load();})),
+    Card(child:ListTile(leading:const Icon(Icons.key_outlined),title:const Text('Đổi mật khẩu'),trailing:const Icon(Icons.chevron_right),onTap:()async{final changed=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>const PasswordScreen()));if(changed==true){await Api.clearToken();if(context.mounted)widget.onLogout();}})),
     const SizedBox(height:16),OutlinedButton.icon(onPressed:logout,icon:const Icon(Icons.logout),label:const Text('Đăng xuất')),
   ]));
 }
@@ -171,4 +172,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ]))));
 }
 
+class PasswordScreen extends StatefulWidget {const PasswordScreen({super.key});@override State<PasswordScreen> createState()=>_PasswordScreenState();}
+class _PasswordScreenState extends State<PasswordScreen> {
+  final form=GlobalKey<FormState>();final oldPass=TextEditingController(),newPass=TextEditingController(),confirm=TextEditingController();bool busy=false,hide=true;
+  @override void dispose(){oldPass.dispose();newPass.dispose();confirm.dispose();super.dispose();}
+  Future<void> save()async{if(!form.currentState!.validate())return;setState(()=>busy=true);try{
+    await Api.request('PUT','/change-password',{'oldPassword':oldPass.text,'newPassword':newPass.text});
+    if(mounted){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Đổi mật khẩu thành công. Vui lòng đăng nhập lại.')));Navigator.pop(context,true);}
+  }catch(e){if(mounted)showError(context,e);}finally{if(mounted)setState(()=>busy=false);}}
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Đổi mật khẩu')),body:SingleChildScrollView(padding:const EdgeInsets.all(22),child:Form(key:form,child:Column(children:[
+    TextFormField(controller:oldPass,obscureText:hide,decoration:const InputDecoration(labelText:'Mật khẩu hiện tại',prefixIcon:Icon(Icons.lock_outline)),validator:(v)=>(v??'').isEmpty?'Vui lòng nhập mật khẩu hiện tại':null),const SizedBox(height:15),
+    TextFormField(controller:newPass,obscureText:hide,decoration:const InputDecoration(labelText:'Mật khẩu mới',prefixIcon:Icon(Icons.lock_reset)),validator:(v)=>(v??'').length<6?'Tối thiểu 6 ký tự':null),const SizedBox(height:15),
+    TextFormField(controller:confirm,obscureText:hide,decoration:const InputDecoration(labelText:'Xác nhận mật khẩu mới',prefixIcon:Icon(Icons.verified_user_outlined)),validator:(v)=>v!=newPass.text?'Mật khẩu không khớp':null),const SizedBox(height:8),
+    SwitchListTile(title:const Text('Hiện mật khẩu'),value:!hide,onChanged:(v)=>setState(()=>hide=!v)),const SizedBox(height:20),
+    SizedBox(width:double.infinity,child:FilledButton(onPressed:busy?null:save,child:Text(busy?'Đang xử lý...':'Đổi mật khẩu'))),
+  ]))));
+}
 void showError(BuildContext context,Object error){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error.toString().replaceFirst('Exception: ','')),backgroundColor:Colors.red.shade700));}

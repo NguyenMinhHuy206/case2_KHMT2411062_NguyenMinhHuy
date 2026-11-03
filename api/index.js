@@ -70,6 +70,17 @@ app.put('/me',auth,(req,res)=>{
     return res.json({message:'Cập nhật thông tin thành công.',user:cleanUser(user)});
   } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
+app.put('/change-password',auth,async(req,res)=>{
+  try {
+    const oldPassword=String(req.body.oldPassword||'');const newPassword=String(req.body.newPassword||'');
+    if(newPassword.length<6)return res.status(400).json({message:'Mật khẩu mới phải có ít nhất 6 ký tự.'});
+    if(!(await bcrypt.compare(oldPassword,req.user.passwordHash)))return res.status(400).json({message:'Mật khẩu hiện tại không đúng.'});
+    if(oldPassword===newPassword)return res.status(400).json({message:'Mật khẩu mới phải khác mật khẩu cũ.'});
+    const users=readUsers();const user=users.find(u=>u.id===req.user.id);
+    user.passwordHash=await bcrypt.hash(newPassword,12);user.tokenVersion=(user.tokenVersion||0)+1;saveUsers(users);
+    return res.json({message:'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.'});
+  } catch(e){console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
+});
 app.post('/logout',auth,(req,res)=>{
   try {
     const users=readUsers();const user=users.find(u=>u.id===req.user.id);
