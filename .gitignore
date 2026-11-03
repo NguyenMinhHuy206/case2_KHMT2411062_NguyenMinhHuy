@@ -2,4 +2,12 @@ api/node_modules/
 api/.env
 TaskManager/.dart_tool/
 TaskManager/build/
+.idea/api/users.json
+backup_auth_*/
+TaskManager/lib/main_backup_*.dart
+api/main.dart
 .idea/
+api/users.json
+/api/users.json.tmp
+/api/.env
+TaskManager/lib/*.bak

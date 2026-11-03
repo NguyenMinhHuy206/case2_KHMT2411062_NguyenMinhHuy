@@ -1,155 +1,70 @@
-
+'use strict';
 const express = require('express');
-const { randomBytes, scrypt, timingSafeEqual } = require('node:crypto');
-const { promisify } = require('node:util');
-
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const app = express();
-const PORT = 3000;
-const scryptAsync = promisify(scrypt);
-
-app.use(express.json());
-
-// Lưu tài khoản tạm thời trong RAM
-const users = [];
-
-// Kiểm tra Backend
-app.get('/', (req, res) => {
-  res.json({
-    message: 'TaskManager API running successfully'
-  });
-});
-
-// =============================
-// A.1 - ĐĂNG KÝ TÀI KHOẢN
-// =============================
-app.post('/api/register', async (req, res) => {
+app.use(cors());
+app.use(express.json({limit:'20kb'}));
+const PORT = process.env.PORT || 3000;
+const SECRET = process.env.JWT_SECRET || 'LOCAL_DEVELOPMENT_ONLY_CHANGE_ME_BEFORE_DEPLOY';
+if (SECRET === 'LOCAL_DEVELOPMENT_ONLY_CHANGE_ME_BEFORE_DEPLOY') {
+  console.warn('WARNING: JWT_SECRET is not configured. Local development only.');
+}
+const DB = path.join(__dirname, 'users.json');
+function readUsers() {
+  if (!fs.existsSync(DB)) return [];
+  return JSON.parse(fs.readFileSync(DB,'utf8'));
+}
+function saveUsers(users) {
+  const tmp = DB + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(users,null,2));
+  fs.renameSync(tmp, DB);
+}
+function cleanUser(user) {return {id:user.id,name:user.name,email:user.email};}
+function emailOf(value) {return String(value||'').trim().toLowerCase();}
+function validEmail(email) {return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);}
+function auth(req,res,next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   try {
-    const { name, email, password } = req.body || {};
-
-    if (
-      typeof name !== 'string' ||
-      typeof email !== 'string' ||
-      typeof password !== 'string' ||
-      !name.trim() ||
-      !email.trim() ||
-      !password
-    ) {
-      return res.status(400).json({
-        message: 'Vui lòng nhập đầy đủ thông tin'
-      });
-    }
-
-    const cleanName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      return res.status(400).json({
-        message: 'Email không hợp lệ'
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        message: 'Mật khẩu phải có ít nhất 8 ký tự'
-      });
-    }
-
-    if (users.some(user => user.email === cleanEmail)) {
-      return res.status(409).json({
-        message: 'Email đã được đăng ký'
-      });
-    }
-
-    const salt = randomBytes(16).toString('hex');
-    const hash = (await scryptAsync(password, salt, 64))
-      .toString('hex');
-
-    const user = {
-      id: users.length + 1,
-      name: cleanName,
-      email: cleanEmail,
-      passwordHash: `${salt}:${hash}`
-    };
-
-    users.push(user);
-
-    return res.status(201).json({
-      message: 'Đăng ký thành công',
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email
-      }
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: 'Lỗi máy chủ'
-    });
-  }
-});
-
-// =============================
-// A.2 - ĐĂNG NHẬP TÀI KHOẢN
-// =============================
-app.post('/api/login', async (req, res) => {
+    if (!token) return res.status(401).json({message:'Bạn chưa đăng nhập.'});
+    const decoded = jwt.verify(token, SECRET);
+    const user = readUsers().find(u=>u.id===decoded.sub);
+    if (!user || (user.tokenVersion||0)!==(decoded.ver||0)) return res.status(401).json({message:'Phiên đăng nhập không hợp lệ.'});
+    req.user = user;
+    next();
+  } catch(e) {return res.status(401).json({message:'Phiên đăng nhập hết hạn hoặc không hợp lệ.'});}
+}
+function tokenFor(user) {return jwt.sign({sub:user.id,ver:user.tokenVersion||0}, SECRET, {expiresIn:'7d'});}
+app.get('/health',(req,res)=>res.json({status:'ok'}));
+app.post('/register',async(req,res)=>{
   try {
-    const { email, password } = req.body || {};
-
-    if (
-      typeof email !== 'string' ||
-      typeof password !== 'string' ||
-      !email.trim() ||
-      !password
-    ) {
-      return res.status(400).json({
-        message: 'Vui lòng nhập email và mật khẩu'
-      });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    const user = users.find(
-      user => user.email === cleanEmail
-    );
-
-    if (!user) {
-      return res.status(401).json({
-        message: 'Email hoặc mật khẩu không chính xác'
-      });
-    }
-
-    const [salt, savedHash] = user.passwordHash.split(':');
-
-    const enteredHash = await scryptAsync(password, salt, 64);
-    const expectedHash = Buffer.from(savedHash, 'hex');
-
-    const valid =
-      enteredHash.length === expectedHash.length &&
-      timingSafeEqual(enteredHash, expectedHash);
-
-    if (!valid) {
-      return res.status(401).json({
-        message: 'Email hoặc mật khẩu không chính xác'
-      });
-    }
-
-    return res.status(200).json({
-      message: 'Đăng nhập thành công',
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email
-      }
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      message: 'Lỗi máy chủ'
-    });
-  }
+    const name=String(req.body.name||'').trim(); const email=emailOf(req.body.email); const password=String(req.body.password||'');
+    if(name.length<2||!validEmail(email)||password.length<6) return res.status(400).json({message:'Họ tên tối thiểu 2 ký tự, email hợp lệ và mật khẩu tối thiểu 6 ký tự.'});
+    const users=readUsers(); if(users.some(u=>u.email===email)) return res.status(409).json({message:'Email đã được đăng ký.'});
+    const user={id:crypto.randomUUID(),name,email,passwordHash:await bcrypt.hash(password,12),tokenVersion:0};
+    users.push(user); saveUsers(users);
+    return res.status(201).json({message:'Đăng ký thành công.',user:cleanUser(user),token:tokenFor(user)});
+  } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+app.post('/login',async(req,res)=>{
+  try {
+    const email=emailOf(req.body.email); const password=String(req.body.password||'');
+    const user=readUsers().find(u=>u.email===email);
+    if(!user||!(await bcrypt.compare(password,user.passwordHash))) return res.status(401).json({message:'Email hoặc mật khẩu không đúng.'});
+    return res.json({message:'Đăng nhập thành công.',user:cleanUser(user),token:tokenFor(user)});
+  } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
+app.get('/me',auth,(req,res)=>res.json({user:cleanUser(req.user)}));
+app.post('/logout',auth,(req,res)=>{
+  try {
+    const users=readUsers();const user=users.find(u=>u.id===req.user.id);
+    user.tokenVersion=(user.tokenVersion||0)+1;saveUsers(users);
+    return res.json({message:'Đăng xuất thành công.'});
+  } catch(e){console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
+});
+app.listen(PORT,'0.0.0.0',()=>console.log(`Server running at http://localhost:${PORT}`));
