@@ -60,6 +60,16 @@ app.post('/login',async(req,res)=>{
   } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
 app.get('/me',auth,(req,res)=>res.json({user:cleanUser(req.user)}));
+app.put('/me',auth,(req,res)=>{
+  try {
+    const name=String(req.body.name||'').trim(); const email=emailOf(req.body.email);
+    if(name.length<2||!validEmail(email)) return res.status(400).json({message:'Họ tên hoặc email không hợp lệ.'});
+    const users=readUsers();
+    if(users.some(u=>u.id!==req.user.id&&u.email===email)) return res.status(409).json({message:'Email đã được sử dụng.'});
+    const user=users.find(u=>u.id===req.user.id); user.name=name;user.email=email;saveUsers(users);
+    return res.json({message:'Cập nhật thông tin thành công.',user:cleanUser(user)});
+  } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
+});
 app.post('/logout',auth,(req,res)=>{
   try {
     const users=readUsers();const user=users.find(u=>u.id===req.user.id);

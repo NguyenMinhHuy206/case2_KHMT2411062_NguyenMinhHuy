@@ -152,8 +152,23 @@ class _HomeScreenState extends State<HomeScreen> {
     const Icon(Icons.account_circle_outlined,size:82,color:Color(0xFF6D9DE6)),const SizedBox(height:12),
     Text('Xin chào, ${user?['name']??''}!',textAlign:TextAlign.center,style:const TextStyle(fontSize:23,fontWeight:FontWeight.bold)),
     const SizedBox(height:8),Text('${user?['email']??''}',textAlign:TextAlign.center),const SizedBox(height:32),
+    Card(child:ListTile(leading:const Icon(Icons.person_outline),title:const Text('Xem và cập nhật thông tin cá nhân'),trailing:const Icon(Icons.chevron_right),onTap:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const ProfileScreen()));load();})),
     const SizedBox(height:16),OutlinedButton.icon(onPressed:logout,icon:const Icon(Icons.logout),label:const Text('Đăng xuất')),
   ]));
+}
+
+class ProfileScreen extends StatefulWidget {const ProfileScreen({super.key});@override State<ProfileScreen> createState()=>_ProfileScreenState();}
+class _ProfileScreenState extends State<ProfileScreen> {
+  final form=GlobalKey<FormState>();final name=TextEditingController(),email=TextEditingController();bool busy=true;
+  @override void initState(){super.initState();load();}
+  @override void dispose(){name.dispose();email.dispose();super.dispose();}
+  Future<void> load()async{try{final d=await Api.request('GET','/me');name.text=d['user']['name'];email.text=d['user']['email'];}catch(e){if(mounted)showError(context,e);}finally{if(mounted)setState(()=>busy=false);}}
+  Future<void> save()async{if(!form.currentState!.validate())return;setState(()=>busy=true);try{await Api.request('PUT','/me',{'name':name.text.trim(),'email':email.text.trim()});if(mounted){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Đã cập nhật thông tin.')));Navigator.pop(context);}}catch(e){if(mounted)showError(context,e);}finally{if(mounted)setState(()=>busy=false);}}
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Thông tin cá nhân')),body:busy&&name.text.isEmpty?const Center(child:CircularProgressIndicator()):SingleChildScrollView(padding:const EdgeInsets.all(22),child:Form(key:form,child:Column(children:[
+    TextFormField(controller:name,decoration:const InputDecoration(labelText:'Họ và tên',prefixIcon:Icon(Icons.person_outline)),validator:(v)=>(v??'').trim().length<2?'Họ tên tối thiểu 2 ký tự':null),const SizedBox(height:16),
+    TextFormField(controller:email,keyboardType:TextInputType.emailAddress,decoration:const InputDecoration(labelText:'Email',prefixIcon:Icon(Icons.email_outlined)),validator:(v)=>v==null||!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v.trim())?'Email không hợp lệ':null),const SizedBox(height:22),
+    SizedBox(width:double.infinity,child:FilledButton(onPressed:busy?null:save,child:const Text('Lưu thay đổi'))),
+  ]))));
 }
 
 void showError(BuildContext context,Object error){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error.toString().replaceFirst('Exception: ','')),backgroundColor:Colors.red.shade700));}
