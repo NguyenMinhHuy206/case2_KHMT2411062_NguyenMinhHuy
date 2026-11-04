@@ -597,6 +597,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _loading = true;
   bool _deleting = false;
   bool _updatingStatus = false;
+  bool _updatingPriority = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -638,7 +639,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   // B3: Thay doi trang thai ngay tai man hinh chi tiet, khong can sua toan bo form.
   Future<void> _changeStatus(String nextStatus) async {
-    if (_task == null || _updatingStatus || _deleting) return;
+    if (_task == null || _updatingStatus || _updatingPriority || _deleting) return;
     if (nextStatus == (_task!['status'] ?? '').toString()) return;
     setState(() => _updatingStatus = true);
     try {
@@ -654,6 +655,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
+
+  // B4: Cap nhat muc do uu tien ngay tai man hinh chi tiet.
+  Future<void> _changePriority(String nextPriority) async {
+    if (_task == null || _updatingPriority || _updatingStatus || _deleting) return;
+    if (nextPriority == (_task!['priority'] ?? '').toString()) return;
+    setState(() => _updatingPriority = true);
+    try {
+      final response = await Api.request(
+        'PATCH', '/api/tasks/${widget.taskId}/priority', {'priority': nextPriority},
+      );
+      if (!mounted) return;
+      setState(() => _task = Map<String, dynamic>.from(response['task'] as Map));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cập nhật mức độ ưu tiên thành công.')),
+      );
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _updatingPriority = false);
     }
   }
 
@@ -734,7 +756,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     DropdownMenuItem(value: 'in_progress', child: Text('Đang thực hiện')),
                     DropdownMenuItem(value: 'completed', child: Text('Đã hoàn thành')),
                   ],
-                  onChanged: (_updatingStatus || _deleting) ? null : (value) {
+                  onChanged: (_updatingStatus || _updatingPriority || _deleting) ? null : (value) {
                     if (value != null) _changeStatus(value);
                   },
                 ),
@@ -744,15 +766,40 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                 child: LinearProgressIndicator(),
               ),
               _item('Ưu tiên', _priority((_task!['priority'] ?? '').toString()), Icons.flag_outlined),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('b4_priority_${_task!['priority']}'),
+                  initialValue: (_task!['priority'] ?? 'medium').toString(),
+                  decoration: const InputDecoration(
+                    labelText: 'B4 - Thiết lập mức độ ưu tiên',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.flag_outlined),
+                    helperText: 'Chọn mức ưu tiên để lưu ngay vào hệ thống',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'low', child: Text('Thấp')),
+                    DropdownMenuItem(value: 'medium', child: Text('Trung bình')),
+                    DropdownMenuItem(value: 'high', child: Text('Cao')),
+                  ],
+                  onChanged: (_updatingStatus || _updatingPriority || _deleting) ? null : (value) {
+                    if (value != null) _changePriority(value);
+                  },
+                ),
+              ),
+              if (_updatingPriority) const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: LinearProgressIndicator(),
+              ),
               _item('Ngày bắt đầu', _date(_task!['startDate']), Icons.today),
               _item('Hạn hoàn thành', _date(_task!['dueDate']), Icons.event),
               _item('Thời gian tạo', _date(_task!['createdAt']), Icons.access_time),
             ])),
             const SizedBox(height: 20),
-            FilledButton.icon(onPressed: (_deleting || _updatingStatus) ? null : _edit,
+            FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _edit,
               icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
             const SizedBox(height: 10),
-            OutlinedButton.icon(onPressed: (_deleting || _updatingStatus) ? null : _delete,
+            OutlinedButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _delete,
               icon: const Icon(Icons.delete_outline),
               label: Text(_deleting ? 'Đang xóa...' : 'Xóa công việc'),
               style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700)),

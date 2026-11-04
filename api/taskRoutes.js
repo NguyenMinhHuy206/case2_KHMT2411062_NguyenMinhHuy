@@ -124,6 +124,25 @@ module.exports = function createTaskRouter(auth) {
     } catch (error) { return error500(res, error); }
   });
 
+  // B4: Cap nhat rieng muc do uu tien (low / medium / high).
+  router.patch('/:id/priority', auth, (req, res) => {
+    try {
+      const priority = req.body?.priority;
+      if (!['low', 'medium', 'high'].includes(priority)) {
+        return res.status(400).json({ message: 'Muc do uu tien khong hop le.' });
+      }
+      const tasks = readTasks();
+      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      if (index < 0) {
+        return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
+      }
+      const updated = { ...tasks[index], priority, updatedAt: new Date().toISOString() };
+      tasks[index] = updated;
+      saveTasks(tasks);
+      return res.json({ message: 'Cap nhat muc do uu tien thanh cong.', task: updated });
+    } catch (error) { return error500(res, error); }
+  });
+
   // B2: Xóa, chỉ chủ sở hữu được phép thao tác.
   router.delete('/:id', auth, (req, res) => {
     try {
