@@ -105,6 +105,25 @@ module.exports = function createTaskRouter(auth) {
     } catch (error) { return error500(res, error); }
   });
 
+  // B3: Cap nhat rieng trang thai. Chi nguoi tao duoc doi trang thai.
+  router.patch('/:id/status', auth, (req, res) => {
+    try {
+      const status = req.body?.status;
+      if (!['pending', 'in_progress', 'completed'].includes(status)) {
+        return res.status(400).json({ message: 'Trang thai khong hop le.' });
+      }
+      const tasks = readTasks();
+      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      if (index < 0) {
+        return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
+      }
+      const updated = { ...tasks[index], status, updatedAt: new Date().toISOString() };
+      tasks[index] = updated;
+      saveTasks(tasks);
+      return res.json({ message: 'Cap nhat trang thai thanh cong.', task: updated });
+    } catch (error) { return error500(res, error); }
+  });
+
   // B2: Xóa, chỉ chủ sở hữu được phép thao tác.
   router.delete('/:id', auth, (req, res) => {
     try {

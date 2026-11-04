@@ -15,6 +15,7 @@ class Api {
       late http.Response response;
       if(method=='GET') {response=await http.get(uri,headers:headers).timeout(const Duration(seconds:12));}
       else if(method=='PUT') {response=await http.put(uri,headers:headers,body:jsonEncode(body??{})).timeout(const Duration(seconds:12));}
+      else if(method=='PATCH') {response=await http.patch(uri,headers:headers,body:jsonEncode(body??{})).timeout(const Duration(seconds:12));}
       else if(method=='DELETE') {response=await http.delete(uri,headers:headers).timeout(const Duration(seconds:12));}
       else {response=await http.post(uri,headers:headers,body:jsonEncode(body??{})).timeout(const Duration(seconds:12));}
       final data=jsonDecode(response.body);
@@ -595,6 +596,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   String? _error;
   bool _loading = true;
   bool _deleting = false;
+  bool _updatingStatus = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -633,6 +635,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
     subtitle: Text(value, style: const TextStyle(fontSize: 15, color: Colors.black87)),
   );
+
+  // B3: Thay doi trang thai ngay tai man hinh chi tiet, khong can sua toan bo form.
+  Future<void> _changeStatus(String nextStatus) async {
+    if (_task == null || _updatingStatus || _deleting) return;
+    if (nextStatus == (_task!['status'] ?? '').toString()) return;
+    setState(() => _updatingStatus = true);
+    try {
+      final response = await Api.request(
+        'PATCH', '/api/tasks/${widget.taskId}/status', {'status': nextStatus},
+      );
+      if (!mounted) return;
+      setState(() => _task = Map<String, dynamic>.from(response['task'] as Map));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cập nhật trạng thái thành công.')),
+      );
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
 
   Future<void> _edit() async {
     if (_task == null) return;
@@ -695,16 +718,41 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             Card(child: Column(children: [
               _item('Mô tả', (_task!['description'] ?? '').toString().isEmpty ? 'Không có mô tả' : _task!['description'].toString(), Icons.notes),
               _item('Trạng thái', _status((_task!['status'] ?? '').toString()), Icons.track_changes),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('b3_status_${_task!['status']}'),
+                  initialValue: (_task!['status'] ?? 'pending').toString(),
+                  decoration: const InputDecoration(
+                    labelText: 'B3 - Cập nhật trạng thái',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.sync_alt),
+                    helperText: 'Chọn trạng thái để lưu ngay vào hệ thống',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'pending', child: Text('Chưa thực hiện')),
+                    DropdownMenuItem(value: 'in_progress', child: Text('Đang thực hiện')),
+                    DropdownMenuItem(value: 'completed', child: Text('Đã hoàn thành')),
+                  ],
+                  onChanged: (_updatingStatus || _deleting) ? null : (value) {
+                    if (value != null) _changeStatus(value);
+                  },
+                ),
+              ),
+              if (_updatingStatus) const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: LinearProgressIndicator(),
+              ),
               _item('Ưu tiên', _priority((_task!['priority'] ?? '').toString()), Icons.flag_outlined),
               _item('Ngày bắt đầu', _date(_task!['startDate']), Icons.today),
               _item('Hạn hoàn thành', _date(_task!['dueDate']), Icons.event),
               _item('Thời gian tạo', _date(_task!['createdAt']), Icons.access_time),
             ])),
             const SizedBox(height: 20),
-            FilledButton.icon(onPressed: _deleting ? null : _edit,
+            FilledButton.icon(onPressed: (_deleting || _updatingStatus) ? null : _edit,
               icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
             const SizedBox(height: 10),
-            OutlinedButton.icon(onPressed: _deleting ? null : _delete,
+            OutlinedButton.icon(onPressed: (_deleting || _updatingStatus) ? null : _delete,
               icon: const Icon(Icons.delete_outline),
               label: Text(_deleting ? 'Đang xóa...' : 'Xóa công việc'),
               style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700)),
