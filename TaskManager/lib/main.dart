@@ -152,6 +152,33 @@ class _HomeScreenState extends State<HomeScreen> {
     const Icon(Icons.account_circle_outlined,size:82,color:Color(0xFF6D9DE6)),const SizedBox(height:12),
     Text('Xin chào, ${user?['name']??''}!',textAlign:TextAlign.center,style:const TextStyle(fontSize:23,fontWeight:FontWeight.bold)),
     const SizedBox(height:8),Text('${user?['email']??''}',textAlign:TextAlign.center),const SizedBox(height:32),
+    Card(child:ListTile(
+      leading: const Icon(Icons.list_alt_outlined),
+      title: const Text('Danh sách công việc'),
+      subtitle: const Text('Xem công việc do bạn tạo'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const TaskListScreen()),
+      ),
+    )),
+    Card(child:ListTile(
+      leading: const Icon(Icons.add_task_outlined),
+      title: const Text('Tạo công việc mới'),
+      subtitle: const Text('Tạo công việc và lưu vào hệ thống'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        final created = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(builder: (_) => const CreateTaskScreen()),
+        );
+        if (created == true && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Đã tạo công việc thành công.')),
+          );
+        }
+      },
+    )),
     Card(child:ListTile(leading:const Icon(Icons.person_outline),title:const Text('Xem và cập nhật thông tin cá nhân'),trailing:const Icon(Icons.chevron_right),onTap:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const ProfileScreen()));load();})),
     Card(child:ListTile(leading:const Icon(Icons.key_outlined),title:const Text('Đổi mật khẩu'),trailing:const Icon(Icons.chevron_right),onTap:()async{final changed=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>const PasswordScreen()));if(changed==true){await Api.clearToken();if(context.mounted)widget.onLogout();}})),
     const SizedBox(height:16),OutlinedButton.icon(onPressed:logout,icon:const Icon(Icons.logout),label:const Text('Đăng xuất')),
@@ -188,4 +215,351 @@ class _PasswordScreenState extends State<PasswordScreen> {
     SizedBox(width:double.infinity,child:FilledButton(onPressed:busy?null:save,child:Text(busy?'Đang xử lý...':'Đổi mật khẩu'))),
   ]))));
 }
+// B1 – Tao cong viec; su dung Api.request va JWT da co trong phan A.
+class CreateTaskScreen extends StatefulWidget {
+  const CreateTaskScreen({super.key});
+
+  @override
+  State<CreateTaskScreen> createState() => _CreateTaskScreenState();
+}
+
+class _CreateTaskScreenState extends State<CreateTaskScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _title = TextEditingController();
+  final _description = TextEditingController();
+  String _status = 'pending';
+  String _priority = 'medium';
+  DateTime? _startDate;
+  DateTime? _dueDate;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _description.dispose();
+    super.dispose();
+  }
+
+  String _formatDate(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+
+  Future<void> _pickDate({required bool start}) async {
+    final current = start ? _startDate : _dueDate;
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current ?? now,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: start ? 'Chọn ngày bắt đầu' : 'Chọn hạn hoàn thành',
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (start) {
+          _startDate = picked;
+        } else {
+          _dueDate = picked;
+        }
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (_startDate != null &&
+        _dueDate != null &&
+        _dueDate!.isBefore(_startDate!)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hạn hoàn thành phải từ ngày bắt đầu trở đi.')),
+      );
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      await Api.request('POST', '/api/tasks', {
+        'title': _title.text.trim(),
+        'description': _description.text.trim(),
+        'status': _status,
+        'priority': _priority,
+        'startDate': _startDate == null ? null : _formatDate(_startDate!),
+        'dueDate': _dueDate == null ? null : _formatDate(_dueDate!),
+      });
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('Tạo công việc mới')),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Thông tin công việc',
+                    style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Điền thông tin bên dưới để tạo công việc.'),
+                  const SizedBox(height: 20),
+                  TextFormField(
+                    controller: _title,
+                    maxLength: 200,
+                    decoration: const InputDecoration(
+                      labelText: 'Tiêu đề *',
+                      prefixIcon: Icon(Icons.assignment_outlined),
+                    ),
+                    validator: (value) => (value ?? '').trim().isEmpty
+                        ? 'Vui lòng nhập tiêu đề công việc'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _description,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Mô tả',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(Icons.notes_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: _status,
+                    decoration: const InputDecoration(
+                      labelText: 'Trạng thái',
+                      prefixIcon: Icon(Icons.track_changes_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'pending', child: Text('Chưa thực hiện')),
+                      DropdownMenuItem(value: 'in_progress', child: Text('Đang thực hiện')),
+                      DropdownMenuItem(value: 'completed', child: Text('Đã hoàn thành')),
+                    ],
+                    onChanged: _saving ? null : (value) {
+                      if (value != null) setState(() => _status = value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: _priority,
+                    decoration: const InputDecoration(
+                      labelText: 'Độ ưu tiên',
+                      prefixIcon: Icon(Icons.flag_outlined),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'low', child: Text('Thấp')),
+                      DropdownMenuItem(value: 'medium', child: Text('Trung bình')),
+                      DropdownMenuItem(value: 'high', child: Text('Cao')),
+                    ],
+                    onChanged: _saving ? null : (value) {
+                      if (value != null) setState(() => _priority = value);
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : () => _pickDate(start: true),
+                    icon: const Icon(Icons.event_outlined),
+                    label: Text(_startDate == null
+                        ? 'Chọn ngày bắt đầu'
+                        : 'Ngày bắt đầu: ${_formatDate(_startDate!)}'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : () => _pickDate(start: false),
+                    icon: const Icon(Icons.event_available_outlined),
+                    label: Text(_dueDate == null
+                        ? 'Chọn hạn hoàn thành'
+                        : 'Hạn hoàn thành: ${_formatDate(_dueDate!)}'),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.save_outlined),
+                    label: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(_saving ? 'Đang lưu...' : 'Tạo công việc'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+}
+
+// B1: Danh sach cong viec do tai khoan dang nhap tao.
+// Cong viec duoc giao/nhan/chia se can dong bo voi phan C.
+class TaskListScreen extends StatefulWidget {
+  const TaskListScreen({super.key});
+
+  @override
+  State<TaskListScreen> createState() => _TaskListScreenState();
+}
+
+class _TaskListScreenState extends State<TaskListScreen> {
+  bool _loading = true;
+  String? _error;
+  List<Map<String, dynamic>> _tasks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
+  }
+
+  Future<void> _loadTasks() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final response = await Api.request('GET', '/api/tasks');
+      final raw = response['tasks'];
+      if (raw is! List) {
+        throw Exception('Danh sách công việc trả về không hợp lệ.');
+      }
+      final items = raw
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (!mounted) return;
+      setState(() { _tasks = items; _loading = false; });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() { _error = error.toString().replaceFirst('Exception: ', ''); _loading = false; });
+    }
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'pending': return 'Chưa thực hiện';
+      case 'in_progress': return 'Đang thực hiện';
+      case 'completed': return 'Đã hoàn thành';
+      default: return 'Không xác định';
+    }
+  }
+
+  String _priorityLabel(String priority) {
+    switch (priority) {
+      case 'low': return 'Thấp';
+      case 'medium': return 'Trung bình';
+      case 'high': return 'Cao';
+      default: return 'Chưa xác định';
+    }
+  }
+
+  String _formatDate(dynamic value) {
+    if (value == null || value.toString().isEmpty) return 'Chưa đặt hạn';
+    final date = DateTime.tryParse(value.toString());
+    if (date == null) return 'Không hợp lệ';
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(date.day)}/${two(date.month)}/${date.year}';
+  }
+
+  Future<void> _openCreate() async {
+    final created = await Navigator.push<bool>(
+      context, MaterialPageRoute(builder: (_) => const CreateTaskScreen()),
+    );
+    if (!mounted) return;
+    if (created == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã tạo công việc thành công.')),
+      );
+      await _loadTasks();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Danh sách công việc'),
+        actions: [
+          IconButton(
+            tooltip: 'Làm mới',
+            onPressed: _loading ? null : _loadTasks,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openCreate,
+        icon: const Icon(Icons.add),
+        label: const Text('Tạo công việc'),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Text(_error!, textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      FilledButton(onPressed: _loadTasks, child: const Text('Thử lại')),
+                    ]),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadTasks,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                    children: [
+                      Text('Công việc do bạn tạo: ${_tasks.length}',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 6),
+                      const Text('Công việc được giao, nhận và chia sẻ sẽ được tích hợp ở phần C.',
+                          style: TextStyle(color: Colors.black54)),
+                      const SizedBox(height: 18),
+                      if (_tasks.isEmpty)
+                        const Card(child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Center(child: Text('Chưa có công việc nào.')),
+                        )),
+                      for (final task in _tasks)
+                        Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text((task['title'] ?? 'Không có tiêu đề').toString(),
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                if ((task['description'] ?? '').toString().trim().isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text(task['description'].toString(),
+                                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                                ],
+                                const SizedBox(height: 10),
+                                Wrap(spacing: 8, runSpacing: 6, children: [
+                                  Chip(label: Text(_statusLabel((task['status'] ?? '').toString()))),
+                                  Chip(label: Text('Ưu tiên: ${_priorityLabel((task['priority'] ?? '').toString())}')),
+                                ]),
+                                const SizedBox(height: 6),
+                                Text('Hạn hoàn thành: ${_formatDate(task['dueDate'])}',
+                                    style: const TextStyle(color: Colors.black54)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+    );
+  }
+}
+
 void showError(BuildContext context,Object error){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error.toString().replaceFirst('Exception: ','')),backgroundColor:Colors.red.shade700));}
