@@ -1,5 +1,4 @@
 'use strict';
-
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -11,104 +10,111 @@ module.exports = function createTaskRouter(auth) {
 
   function readTasks() {
     if (!fs.existsSync(DB)) return [];
-    const content = fs.readFileSync(DB, 'utf8').replace(/^\uFEFF/, '').trim();
-    return content ? JSON.parse(content) : [];
+    const raw = fs.readFileSync(DB, 'utf8').replace(/^\uFEFF/, '').trim();
+    const tasks = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(tasks)) throw new Error('tasks.json must contain an array');
+    return tasks;
   }
-
   function saveTasks(tasks) {
     const temp = DB + '.tmp';
     fs.writeFileSync(temp, JSON.stringify(tasks, null, 2), 'utf8');
     fs.renameSync(temp, DB);
   }
-
-  router.post('/', auth, (req, res) => {
-    try {
-      const title = String(req.body.title || '').trim();
-      const description = String(req.body.description || '').trim();
-      const status = req.body.status || 'pending';
-      const priority = req.body.priority || 'medium';
-      const startDate = req.body.startDate || null;
-      const dueDate = req.body.dueDate || null;
-
-      if (!title || title.length > 200) {
-        return res.status(400).json({
-          message: 'Tieu de phai co tu 1 den 200 ky tu.'
-        });
-      }
-
-      if (!['pending', 'in_progress', 'completed'].includes(status)) {
-        return res.status(400).json({
-          message: 'Trang thai khong hop le.'
-        });
-      }
-
-      if (!['low', 'medium', 'high'].includes(priority)) {
-        return res.status(400).json({
-          message: 'Do uu tien khong hop le.'
-        });
-      }
-
-      for (const value of [startDate, dueDate]) {
-        if (value !== null && (typeof value !== 'string' ||
-            !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
-            Number.isNaN(Date.parse(value)))) {
-          return res.status(400).json({
-            message: 'Ngay phai dung dinh dang YYYY-MM-DD.'
-          });
-        }
-      }
-
-      if (startDate && dueDate && startDate > dueDate) {
-        return res.status(400).json({
-          message: 'Han hoan thanh phai sau ngay bat dau.'
-        });
-      }
-
-      const task = {
-        id: crypto.randomUUID(),
-        title,
-        description,
-        status,
-        priority,
-        startDate,
-        dueDate,
-        createdBy: req.user.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      const tasks = readTasks();
-      tasks.push(task);
-      saveTasks(tasks);
-
-      return res.status(201).json({
-        message: 'Tao cong viec thanh cong.',
-        task
-      });
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({
-        message: 'Loi may chu.'
-      });
+  function validDate(date) {
+    if (date === null) return true;
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    const d = new Date(`${date}T00:00:00.000Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === date;
+  }
+  function validateFields(body) {
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    const description = body.description === undefined || body.description === null ? '' : body.description;
+    const status = body.status ?? 'pending';
+    const priority = body.priority ?? 'medium';
+    const startDate = body.startDate === '' ? null : (body.startDate ?? null);
+    const dueDate = body.dueDate === '' ? null : (body.dueDate ?? null);
+    if (!title || title.length > 200) return { error: 'Tiêu đề phải có từ 1 đến 200 ký tự.' };
+    if (typeof description !== 'string' || description.length > 5000) return { error: 'Mô tả không hợp lệ hoặc quá dài.' };
+    if (!['pending', 'in_progress', 'completed'].includes(status)) return { error: 'Trạng thái không hợp lệ.' };
+    if (!['low', 'medium', 'high'].includes(priority)) return { error: 'Độ ưu tiên không hợp lệ.' };
+    if (!validDate(startDate) || !validDate(dueDate)) return { error: 'Ngày phải đúng định dạng YYYY-MM-DD và là ngày hợp lệ.' };
+    if (startDate && dueDate && dueDate < startDate) return { error: 'Hạn hoàn thành phải từ ngày bắt đầu trở đi.' };
+    return { fields: { title, description, status, priority, startDate, dueDate } };
+  }
+  function error500(res, error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Lỗi máy chủ.' });
+  }
+  function ownTask(req, res) {
+    const task = readTasks().find(t => t.id === req.params.id);
+    if (!task || task.createdBy !== req.user.id) {
+      res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền truy cập.' });
+      return null;
     }
-  });
+    return task;
+  }
 
+  // B1: Danh sách công việc do người dùng tạo.
   router.get('/', auth, (req, res) => {
     try {
       const tasks = readTasks()
-        .filter(task => task.createdBy === req.user.id)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        .filter(t => t.createdBy === req.user.id)
+        .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
+      return res.json({ total: tasks.length, tasks });
+    } catch (error) { return error500(res, error); }
+  });
 
-      return res.json({
-        total: tasks.length,
-        tasks
-      });
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({
-        message: 'Khong the lay danh sach cong viec.'
-      });
-    }
+  // B2: Tạo công việc.
+  router.post('/', auth, (req, res) => {
+    try {
+      const check = validateFields(req.body || {});
+      if (check.error) return res.status(400).json({ message: check.error });
+      const now = new Date().toISOString();
+      const task = {
+        id: crypto.randomUUID(), ...check.fields,
+        createdBy: req.user.id, createdAt: now, updatedAt: now
+      };
+      const tasks = readTasks();
+      tasks.push(task);
+      saveTasks(tasks);
+      return res.status(201).json({ message: 'Tạo công việc thành công.', task });
+    } catch (error) { return error500(res, error); }
+  });
+
+  // B2: Xem chi tiết.
+  router.get('/:id', auth, (req, res) => {
+    try {
+      const task = ownTask(req, res);
+      if (!task) return;
+      return res.json({ task });
+    } catch (error) { return error500(res, error); }
+  });
+
+  // B2: Chỉnh sửa. Thay thế bộ trường có thể chỉnh sửa, giữ nguyên ID và chủ sở hữu.
+  router.put('/:id', auth, (req, res) => {
+    try {
+      const tasks = readTasks();
+      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      if (index < 0) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền chỉnh sửa.' });
+      const check = validateFields({ ...tasks[index], ...(req.body || {}) });
+      if (check.error) return res.status(400).json({ message: check.error });
+      const task = { ...tasks[index], ...check.fields, updatedAt: new Date().toISOString() };
+      tasks[index] = task;
+      saveTasks(tasks);
+      return res.json({ message: 'Cập nhật công việc thành công.', task });
+    } catch (error) { return error500(res, error); }
+  });
+
+  // B2: Xóa, chỉ chủ sở hữu được phép thao tác.
+  router.delete('/:id', auth, (req, res) => {
+    try {
+      const tasks = readTasks();
+      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      if (index < 0) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền xóa.' });
+      tasks.splice(index, 1);
+      saveTasks(tasks);
+      return res.json({ message: 'Xóa công việc thành công.' });
+    } catch (error) { return error500(res, error); }
   });
 
   return router;

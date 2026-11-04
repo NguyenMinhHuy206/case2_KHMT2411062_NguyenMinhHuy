@@ -15,6 +15,7 @@ class Api {
       late http.Response response;
       if(method=='GET') {response=await http.get(uri,headers:headers).timeout(const Duration(seconds:12));}
       else if(method=='PUT') {response=await http.put(uri,headers:headers,body:jsonEncode(body??{})).timeout(const Duration(seconds:12));}
+      else if(method=='DELETE') {response=await http.delete(uri,headers:headers).timeout(const Duration(seconds:12));}
       else {response=await http.post(uri,headers:headers,body:jsonEncode(body??{})).timeout(const Duration(seconds:12));}
       final data=jsonDecode(response.body);
       if(data is! Map<String,dynamic>) throw Exception('Phản hồi từ máy chủ không hợp lệ.');
@@ -480,6 +481,15 @@ class _TaskListScreenState extends State<TaskListScreen> {
     }
   }
 
+  Future<void> _openDetail(Map<String, dynamic> task) async {
+    final id = (task['id'] ?? '').toString();
+    if (id.isEmpty) { showError(context, 'Công việc chưa có ID hợp lệ.'); return; }
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => TaskDetailScreen(taskId: id),
+    ));
+    if (mounted) await _loadTasks();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -531,7 +541,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       for (final task in _tasks)
                         Card(
                           margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => _openDetail(task),
+                            child: Padding(
                             padding: const EdgeInsets.all(14),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -551,8 +564,14 @@ class _TaskListScreenState extends State<TaskListScreen> {
                                 const SizedBox(height: 6),
                                 Text('Hạn hoàn thành: ${_formatDate(task['dueDate'])}',
                                     style: const TextStyle(color: Colors.black54)),
+                                const SizedBox(height: 8),
+                                const Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                                  Text('Xem chi tiết', style: TextStyle(color: Color(0xFF416DAF))),
+                                  SizedBox(width: 4), Icon(Icons.chevron_right, size: 18),
+                                ]),
                               ],
                             ),
+                          ),
                           ),
                         ),
                     ],
@@ -560,6 +579,247 @@ class _TaskListScreenState extends State<TaskListScreen> {
                 ),
     );
   }
+}
+
+
+// B2: Chi tiết công việc và các thao tác chỉnh sửa, xóa.
+class TaskDetailScreen extends StatefulWidget {
+  final String taskId;
+  const TaskDetailScreen({super.key, required this.taskId});
+  @override
+  State<TaskDetailScreen> createState() => _TaskDetailScreenState();
+}
+
+class _TaskDetailScreenState extends State<TaskDetailScreen> {
+  Map<String, dynamic>? _task;
+  String? _error;
+  bool _loading = true;
+  bool _deleting = false;
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final response = await Api.request('GET', '/api/tasks/${widget.taskId}');
+      if (!mounted) return;
+      setState(() { _task = Map<String, dynamic>.from(response['task'] as Map); _loading = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
+    }
+  }
+
+  String _status(String v) => switch (v) {
+    'pending' => 'Chưa thực hiện',
+    'in_progress' => 'Đang thực hiện',
+    'completed' => 'Đã hoàn thành',
+    _ => 'Không xác định',
+  };
+  String _priority(String v) => switch (v) {
+    'low' => 'Thấp', 'medium' => 'Trung bình', 'high' => 'Cao', _ => 'Chưa xác định',
+  };
+  String _date(dynamic v) {
+    final raw = (v ?? '').toString();
+    if (raw.isEmpty) return 'Chưa thiết lập';
+    final d = DateTime.tryParse(raw);
+    if (d == null) return 'Ngày không hợp lệ';
+    String two(int x) => x.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)}/${d.year}';
+  }
+  Widget _item(String label, String value, IconData icon) => ListTile(
+    leading: Icon(icon, color: const Color(0xFF416DAF)),
+    title: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+    subtitle: Text(value, style: const TextStyle(fontSize: 15, color: Colors.black87)),
+  );
+
+  Future<void> _edit() async {
+    if (_task == null) return;
+    final changed = await Navigator.push<bool>(context, MaterialPageRoute(
+      builder: (_) => EditTaskScreen(task: _task!),
+    ));
+    if (changed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cập nhật công việc thành công.')));
+      await _load();
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa công việc?'),
+        content: const Text('Công việc sẽ bị xóa vĩnh viễn. Bạn có chắc chắn muốn xóa?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Hủy')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Xóa')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting = true);
+    try {
+      await Api.request('DELETE', '/api/tasks/${widget.taskId}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã xóa công việc.')));
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Chi tiết công việc'), actions: [
+      IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh), tooltip: 'Làm mới'),
+    ]),
+    body: _loading ? const Center(child: CircularProgressIndicator())
+      : _error != null ? Center(child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(_error!, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            FilledButton(onPressed: _load, child: const Text('Thử lại')),
+          ]),
+        ))
+      : _task == null ? const Center(child: Text('Không tìm thấy công việc.'))
+      : SingleChildScrollView(padding: const EdgeInsets.all(18), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text((_task!['title'] ?? '').toString(),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Card(child: Column(children: [
+              _item('Mô tả', (_task!['description'] ?? '').toString().isEmpty ? 'Không có mô tả' : _task!['description'].toString(), Icons.notes),
+              _item('Trạng thái', _status((_task!['status'] ?? '').toString()), Icons.track_changes),
+              _item('Ưu tiên', _priority((_task!['priority'] ?? '').toString()), Icons.flag_outlined),
+              _item('Ngày bắt đầu', _date(_task!['startDate']), Icons.today),
+              _item('Hạn hoàn thành', _date(_task!['dueDate']), Icons.event),
+              _item('Thời gian tạo', _date(_task!['createdAt']), Icons.access_time),
+            ])),
+            const SizedBox(height: 20),
+            FilledButton.icon(onPressed: _deleting ? null : _edit,
+              icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(onPressed: _deleting ? null : _delete,
+              icon: const Icon(Icons.delete_outline),
+              label: Text(_deleting ? 'Đang xóa...' : 'Xóa công việc'),
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700)),
+          ],
+        )),
+  );
+}
+
+class EditTaskScreen extends StatefulWidget {
+  final Map<String, dynamic> task;
+  const EditTaskScreen({super.key, required this.task});
+  @override
+  State<EditTaskScreen> createState() => _EditTaskScreenState();
+}
+
+class _EditTaskScreenState extends State<EditTaskScreen> {
+  final _form = GlobalKey<FormState>();
+  late final TextEditingController _title;
+  late final TextEditingController _description;
+  late String _status;
+  late String _priority;
+  DateTime? _startDate;
+  DateTime? _dueDate;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: (widget.task['title'] ?? '').toString());
+    _description = TextEditingController(text: (widget.task['description'] ?? '').toString());
+    _status = (widget.task['status'] ?? 'pending').toString();
+    _priority = (widget.task['priority'] ?? 'medium').toString();
+    _startDate = DateTime.tryParse((widget.task['startDate'] ?? '').toString());
+    _dueDate = DateTime.tryParse((widget.task['dueDate'] ?? '').toString());
+  }
+  @override
+  void dispose() { _title.dispose(); _description.dispose(); super.dispose(); }
+
+  String _fmt(DateTime? d) => d == null ? 'Chưa đặt' :
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _pick(bool start) async {
+    final current = start ? _startDate : _dueDate;
+    final picked = await showDatePicker(
+      context: context, initialDate: current ?? DateTime.now(),
+      firstDate: DateTime(2000), lastDate: DateTime(2100),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (start) { _startDate = picked; } else { _dueDate = picked; }
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    if (_startDate != null && _dueDate != null && _dueDate!.isBefore(_startDate!)) {
+      showError(context, 'Hạn hoàn thành phải từ ngày bắt đầu trở đi.'); return;
+    }
+    setState(() => _busy = true);
+    try {
+      await Api.request('PUT', '/api/tasks/${widget.task['id']}', {
+        'title': _title.text.trim(), 'description': _description.text.trim(),
+        'status': _status, 'priority': _priority,
+        'startDate': _startDate == null ? null : _fmt(_startDate),
+        'dueDate': _dueDate == null ? null : _fmt(_dueDate),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) { if (mounted) showError(context, e); }
+    finally { if (mounted) setState(() => _busy = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Chỉnh sửa công việc')),
+    body: SingleChildScrollView(padding: const EdgeInsets.all(18), child: Form(
+      key: _form,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        TextFormField(controller: _title, maxLength: 200,
+          decoration: const InputDecoration(labelText: 'Tiêu đề *', prefixIcon: Icon(Icons.assignment_outlined)),
+          validator: (v) => (v ?? '').trim().isEmpty ? 'Vui lòng nhập tiêu đề' : null),
+        const SizedBox(height: 12),
+        TextFormField(controller: _description, maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Mô tả', prefixIcon: Icon(Icons.notes_outlined))),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(initialValue: _status,
+          decoration: const InputDecoration(labelText: 'Trạng thái'),
+          items: const [
+            DropdownMenuItem(value: 'pending', child: Text('Chưa thực hiện')),
+            DropdownMenuItem(value: 'in_progress', child: Text('Đang thực hiện')),
+            DropdownMenuItem(value: 'completed', child: Text('Đã hoàn thành')),
+          ], onChanged: _busy ? null : (v) { if (v != null) setState(() => _status = v); }),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(initialValue: _priority,
+          decoration: const InputDecoration(labelText: 'Ưu tiên'),
+          items: const [
+            DropdownMenuItem(value: 'low', child: Text('Thấp')),
+            DropdownMenuItem(value: 'medium', child: Text('Trung bình')),
+            DropdownMenuItem(value: 'high', child: Text('Cao')),
+          ], onChanged: _busy ? null : (v) { if (v != null) setState(() => _priority = v); }),
+        const SizedBox(height: 14),
+        OutlinedButton.icon(onPressed: _busy ? null : () => _pick(true),
+          icon: const Icon(Icons.calendar_today), label: Text('Ngày bắt đầu: ${_fmt(_startDate)}')),
+        OutlinedButton.icon(onPressed: _busy ? null : () => _pick(false),
+          icon: const Icon(Icons.event), label: Text('Hạn hoàn thành: ${_fmt(_dueDate)}')),
+        Wrap(spacing: 8, children: [
+          TextButton(onPressed: _busy ? null : () => setState(() => _startDate = null), child: const Text('Bỏ ngày bắt đầu')),
+          TextButton(onPressed: _busy ? null : () => setState(() => _dueDate = null), child: const Text('Bỏ hạn')),
+        ]),
+        const SizedBox(height: 18),
+        FilledButton.icon(onPressed: _busy ? null : _save,
+          icon: const Icon(Icons.save_outlined), label: Text(_busy ? 'Đang lưu...' : 'Lưu thay đổi')),
+      ]),
+    )),
+  );
 }
 
 void showError(BuildContext context,Object error){ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error.toString().replaceFirst('Exception: ','')),backgroundColor:Colors.red.shade700));}
