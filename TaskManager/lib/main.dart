@@ -1,3 +1,4 @@
+// UI_REFRESH_V1: Chi thay doi giao dien, giu nguyen API va B1-B6.
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -42,11 +43,70 @@ class Api {
 
 class TaskManagerApp extends StatelessWidget {
   const TaskManagerApp({super.key});
-  @override Widget build(BuildContext context) => MaterialApp(
-    title:'Task Manager',debugShowCheckedModeBanner:false,
-    theme:ThemeData(useMaterial3:true,colorScheme:ColorScheme.fromSeed(seedColor:const Color(0xFF6D9DE6)),scaffoldBackgroundColor:const Color(0xFFFAFBFE),inputDecorationTheme:InputDecorationTheme(border:OutlineInputBorder(borderRadius:BorderRadius.circular(12)),contentPadding:const EdgeInsets.symmetric(horizontal:14,vertical:16))),
-    home:const AuthGateway(),
-  );
+  @override
+  Widget build(BuildContext context) {
+    const blue = Color(0xFF3867D6);
+    const ink = Color(0xFF18243D);
+    const background = Color(0xFFF5F7FC);
+    final scheme = ColorScheme.fromSeed(seedColor: blue, brightness: Brightness.light);
+    return MaterialApp(
+      title: 'Task Manager',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: scheme,
+        scaffoldBackgroundColor: background,
+        fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: background,
+          foregroundColor: ink,
+          elevation: 0,
+          centerTitle: false,
+          titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: ink),
+        ),
+        cardTheme: CardThemeData(
+          color: Colors.white,
+          elevation: 0,
+          margin: const EdgeInsets.symmetric(vertical: 5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFE6EBF4)),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFDFE5F0)),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(0, 50),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 48),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+        ),
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: blue, foregroundColor: Colors.white,
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+      home: const AuthGateway(),
+    );
+  }
 }
 
 class AuthGateway extends StatefulWidget {
@@ -71,15 +131,58 @@ class _AuthGatewayState extends State<AuthGateway> {
 }
 
 class AuthLayout extends StatelessWidget {
-  final String title,subtitle;
+  final String title, subtitle;
   final List<Widget> children;
-  const AuthLayout({super.key,required this.title,required this.subtitle,required this.children});
-  @override Widget build(BuildContext context)=>Scaffold(body:SafeArea(child:Center(child:SingleChildScrollView(padding:const EdgeInsets.symmetric(horizontal:28,vertical:28),child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:400),child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-    Center(child:CircleAvatar(radius:30,backgroundColor:const Color(0xFFE8F1FF),child:Icon(Icons.task_alt_rounded,size:34,color:Theme.of(context).colorScheme.primary))),
-    const SizedBox(height:22),Text(title,textAlign:TextAlign.center,style:const TextStyle(fontSize:25,fontWeight:FontWeight.bold)),
-    const SizedBox(height:7),Text(subtitle,textAlign:TextAlign.center,style:const TextStyle(color:Colors.black54)),
-    const SizedBox(height:34),...children,
-  ]))))));
+  const AuthLayout({super.key, required this.title, required this.subtitle, required this.children});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Container(
+                height: 112,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF3867D6), Color(0xFF829BF3)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Center(
+                  child: Icon(Icons.task_alt_rounded, color: Colors.white, size: 53),
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(title, style: const TextStyle(
+                fontSize: 27, fontWeight: FontWeight.w800, color: Color(0xFF18243D),
+              )),
+              const SizedBox(height: 6),
+              Text(subtitle, style: const TextStyle(color: Color(0xFF6D7891), fontSize: 14)),
+              const SizedBox(height: 24),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: const Color(0xFFE5EAF3)),
+                ),
+                padding: const EdgeInsets.all(18),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+              ),
+              const SizedBox(height: 20),
+              const Text('TASK MANAGER  •  CASE STUDY 2',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFF98A2B7), letterSpacing: 1, fontSize: 10)),
+            ]),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class LoginScreen extends StatefulWidget {
@@ -137,54 +240,227 @@ class _RegisterScreenState extends State<RegisterScreen> {
   ]);
 }
 
-class HomeScreen extends StatefulWidget {final VoidCallback onLogout;const HomeScreen({super.key,required this.onLogout});@override State<HomeScreen> createState()=>_HomeScreenState();}
+class HomeScreen extends StatefulWidget {
+  final VoidCallback onLogout;
+  const HomeScreen({super.key, required this.onLogout});
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
 class _HomeScreenState extends State<HomeScreen> {
-  Map<String,dynamic>? user;
-  bool loading=true;
-  @override void initState(){super.initState();load();}
-  Future<void> load()async{
-    try{final d=await Api.request('GET','/me');if(mounted)setState((){user=d['user'] as Map<String,dynamic>;loading=false;});}
-    catch(e){if(mounted){showError(context,e);await Api.clearToken();widget.onLogout();}}
+  Map<String, dynamic>? user;
+  bool loading = true;
+  List<dynamic>? taskItems;
+
+  @override
+  void initState() {
+    super.initState();
+    load();
   }
-  Future<void> logout()async{
-    try{await Api.request('POST','/logout');}catch(_){/* Clear local token even if offline */}
-    await Api.clearToken();if(mounted)widget.onLogout();
+
+  Future<void> load() async {
+    try {
+      final response = await Api.request('GET', '/me');
+      if (!mounted) return;
+      setState(() {
+        user = response['user'] as Map<String, dynamic>;
+        loading = false;
+      });
+      await reloadStats();
+    } catch (e) {
+      if (!mounted) return;
+      showError(context, e);
+      await Api.clearToken();
+      if (mounted) widget.onLogout();
+    }
   }
-  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Task Manager'),actions:[IconButton(tooltip:'Đăng xuất',onPressed:logout,icon:const Icon(Icons.logout))]),body:loading?const Center(child:CircularProgressIndicator()):ListView(padding:const EdgeInsets.all(22),children:[
-    const Icon(Icons.account_circle_outlined,size:82,color:Color(0xFF6D9DE6)),const SizedBox(height:12),
-    Text('Xin chào, ${user?['name']??''}!',textAlign:TextAlign.center,style:const TextStyle(fontSize:23,fontWeight:FontWeight.bold)),
-    const SizedBox(height:8),Text('${user?['email']??''}',textAlign:TextAlign.center),const SizedBox(height:32),
-    Card(child:ListTile(
-      leading: const Icon(Icons.list_alt_outlined),
-      title: const Text('Danh sách công việc'),
-      subtitle: const Text('Xem công việc do bạn tạo'),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const TaskListScreen()),
+
+  Future<void> reloadStats() async {
+    try {
+      final result = await Api.request('GET', '/api/tasks');
+      final items = result['tasks'];
+      if (mounted) setState(() => taskItems = items is List ? items : null);
+    } catch (_) {
+      if (mounted) setState(() => taskItems = null);
+    }
+  }
+
+  Future<void> logout() async {
+    try { await Api.request('POST', '/logout'); } catch (_) { /* offline logout */ }
+    await Api.clearToken();
+    if (mounted) widget.onLogout();
+  }
+
+  Future<void> openTasks() async {
+    await Navigator.push(context,
+      MaterialPageRoute(builder: (_) => const TaskListScreen()));
+    if (mounted) await reloadStats();
+  }
+
+  Future<void> openCreate() async {
+    final created = await Navigator.push<bool>(context,
+      MaterialPageRoute(builder: (_) => const CreateTaskScreen()));
+    if (!mounted) return;
+    if (created == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã tạo công việc thành công.')));
+    }
+    await reloadStats();
+  }
+
+  Future<void> openProfile() async {
+    await Navigator.push(context,
+      MaterialPageRoute(builder: (_) => const ProfileScreen()));
+    if (mounted) await load();
+  }
+
+  Future<void> openPassword() async {
+    final changed = await Navigator.push<bool>(context,
+      MaterialPageRoute(builder: (_) => const PasswordScreen()));
+    if (changed == true) {
+      await Api.clearToken();
+      if (mounted) widget.onLogout();
+    }
+  }
+
+  Widget metric(String label, int? count, IconData icon, Color tone) {
+    return Expanded(child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE6EBF4)),
       ),
-    )),
-    Card(child:ListTile(
-      leading: const Icon(Icons.add_task_outlined),
-      title: const Text('Tạo công việc mới'),
-      subtitle: const Text('Tạo công việc và lưu vào hệ thống'),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () async {
-        final created = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(builder: (_) => const CreateTaskScreen()),
-        );
-        if (created == true && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Đã tạo công việc thành công.')),
-          );
-        }
-      },
-    )),
-    Card(child:ListTile(leading:const Icon(Icons.person_outline),title:const Text('Xem và cập nhật thông tin cá nhân'),trailing:const Icon(Icons.chevron_right),onTap:()async{await Navigator.push(context,MaterialPageRoute(builder:(_)=>const ProfileScreen()));load();})),
-    Card(child:ListTile(leading:const Icon(Icons.key_outlined),title:const Text('Đổi mật khẩu'),trailing:const Icon(Icons.chevron_right),onTap:()async{final changed=await Navigator.push<bool>(context,MaterialPageRoute(builder:(_)=>const PasswordScreen()));if(changed==true){await Api.clearToken();if(context.mounted)widget.onLogout();}})),
-    const SizedBox(height:16),OutlinedButton.icon(onPressed:logout,icon:const Icon(Icons.logout),label:const Text('Đăng xuất')),
-  ]));
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, color: tone, size: 23),
+        const SizedBox(height: 12),
+        Text(count?.toString() ?? '—', style: const TextStyle(
+          fontSize: 25, fontWeight: FontWeight.w800, color: Color(0xFF18243D))),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF697891))),
+      ]),
+    ));
+  }
+
+  Widget actionTile(String title, String subtitle, IconData icon, Color color, VoidCallback action) {
+    return Card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: action,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14)),
+              child: Icon(icon, color: color, size: 23),
+            ),
+            const SizedBox(width: 13),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1C2941))),
+              const SizedBox(height: 4),
+              Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF7B879C))),
+            ])),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA7BB)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = taskItems;
+    final total = items?.length;
+    final active = items?.where((t) => t is Map && t['status'] == 'in_progress').length;
+    final completed = items?.where((t) => t is Map && t['status'] == 'completed').length;
+    final displayName = (user?['name'] ?? 'Bạn').toString();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Row(children: [
+          Icon(Icons.task_alt_rounded, color: Color(0xFF3867D6)),
+          SizedBox(width: 9),
+          Text('TaskManager'),
+        ]),
+        actions: [
+          IconButton(tooltip: 'Làm mới thống kê', onPressed: reloadStats,
+            icon: const Icon(Icons.refresh_rounded)),
+          IconButton(tooltip: 'Đăng xuất', onPressed: logout,
+            icon: const Icon(Icons.logout_rounded)),
+        ],
+      ),
+      body: loading
+        ? const Center(child: CircularProgressIndicator())
+        : RefreshIndicator(
+          onRefresh: reloadStats,
+          child: ListView(padding: const EdgeInsets.fromLTRB(20, 14, 20, 30), children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF3867D6), Color(0xFF728BE7)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('CHÀO MỪNG TRỞ LẠI', style: TextStyle(
+                    color: Color(0xFFDDE7FF), fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 12),
+                  Text('Xin chào, $displayName!',
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 8),
+                  Text((user?['email'] ?? '').toString(), maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFFE1E9FF), fontSize: 12)),
+                ])),
+                const SizedBox(width: 12),
+                const CircleAvatar(radius: 28,
+                  backgroundColor: Color(0x33FFFFFF),
+                  child: Icon(Icons.person_rounded, color: Colors.white, size: 30)),
+              ]),
+            ),
+            const SizedBox(height: 24),
+            const Text('Tổng quan công việc', style: TextStyle(
+              color: Color(0xFF18243D), fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(height: 5),
+            const Text('Dữ liệu thực từ công việc do bạn tạo',
+              style: TextStyle(color: Color(0xFF768399), fontSize: 12)),
+            const SizedBox(height: 14),
+            Row(children: [
+              metric('Tổng công việc', total, Icons.library_books_outlined, const Color(0xFF3867D6)),
+              const SizedBox(width: 9),
+              metric('Đang làm', active, Icons.hourglass_top_rounded, const Color(0xFFF3A442)),
+              const SizedBox(width: 9),
+              metric('Hoàn thành', completed, Icons.check_circle_outline, const Color(0xFF27A879)),
+            ]),
+            const SizedBox(height: 26),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Thao tác nhanh', style: TextStyle(
+                color: Color(0xFF18243D), fontWeight: FontWeight.w800, fontSize: 18)),
+              TextButton(onPressed: openTasks, child: const Text('Xem tất cả')),
+            ]),
+            const SizedBox(height: 4),
+            actionTile('Danh sách công việc', 'Xem, tìm kiếm và lọc công việc',
+              Icons.view_list_rounded, const Color(0xFF3867D6), openTasks),
+            actionTile('Tạo công việc mới', 'Thêm công việc vào hệ thống',
+              Icons.add_task_rounded, const Color(0xFF27A879), openCreate),
+            actionTile('Thông tin cá nhân', 'Xem và cập nhật hồ sơ',
+              Icons.manage_accounts_outlined, const Color(0xFF7868C9), openProfile),
+            actionTile('Đổi mật khẩu', 'Bảo mật tài khoản của bạn',
+              Icons.lock_outline_rounded, const Color(0xFFE7A23B), openPassword),
+            const SizedBox(height: 12),
+            TextButton.icon(onPressed: logout,
+              icon: const Icon(Icons.logout_rounded), label: const Text('Đăng xuất')),
+          ]),
+        ),
+    );
+  }
 }
 
 class ProfileScreen extends StatefulWidget {const ProfileScreen({super.key});@override State<ProfileScreen> createState()=>_ProfileScreenState();}
@@ -415,6 +691,25 @@ class _TaskListScreenState extends State<TaskListScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _tasks = [];
+  // B6: Search and combined filters for already authorized task list.
+  final TextEditingController _search = TextEditingController();
+  String _statusFilter = 'all';
+  String _priorityFilter = 'all';
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+  List<Map<String, dynamic>> get _visibleTasks {
+    final keyword = _search.text.trim().toLowerCase();
+    return _tasks.where((task) {
+      final title = (task['title'] ?? '').toString().toLowerCase();
+      final matchesTitle = keyword.isEmpty || title.contains(keyword);
+      final matchesStatus = _statusFilter == 'all' || task['status'] == _statusFilter;
+      final matchesPriority = _priorityFilter == 'all' || task['priority'] == _priorityFilter;
+      return matchesTitle && matchesStatus && matchesPriority;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -534,12 +829,67 @@ class _TaskListScreenState extends State<TaskListScreen> {
                       const Text('Công việc được giao, nhận và chia sẻ sẽ được tích hợp ở phần C.',
                           style: TextStyle(color: Colors.black54)),
                       const SizedBox(height: 18),
-                      if (_tasks.isEmpty)
+                       // B6: Search title and filter by status/priority.
+                       TextField(
+                         controller: _search,
+                         onChanged: (_) => setState(() {}),
+                         decoration: InputDecoration(
+                           labelText: 'Tìm theo tên công việc',
+                           hintText: 'Nhập tên công việc...',
+                           prefixIcon: const Icon(Icons.search),
+                           suffixIcon: _search.text.isEmpty ? null : IconButton(
+                             tooltip: 'Xóa tìm kiếm',
+                             icon: const Icon(Icons.clear),
+                             onPressed: () { _search.clear(); setState(() {}); },
+                           ),
+                         ),
+                       ),
+                       const SizedBox(height: 12),
+                       DropdownButtonFormField<String>(
+                         initialValue: _statusFilter,
+                         decoration: const InputDecoration(labelText: 'Lọc theo trạng thái'),
+                         items: const [
+                           DropdownMenuItem(value:'all', child:Text('Tất cả trạng thái')),
+                           DropdownMenuItem(value:'pending', child:Text('Chưa thực hiện')),
+                           DropdownMenuItem(value:'in_progress', child:Text('Đang thực hiện')),
+                           DropdownMenuItem(value:'completed', child:Text('Đã hoàn thành')),
+                         ],
+                         onChanged: (v) { if(v != null) setState(() => _statusFilter = v); },
+                       ),
+                       const SizedBox(height: 12),
+                       DropdownButtonFormField<String>(
+                         initialValue: _priorityFilter,
+                         decoration: const InputDecoration(labelText: 'Lọc theo ưu tiên'),
+                         items: const [
+                           DropdownMenuItem(value:'all', child:Text('Tất cả mức ưu tiên')),
+                           DropdownMenuItem(value:'low', child:Text('Thấp')),
+                           DropdownMenuItem(value:'medium', child:Text('Trung bình')),
+                           DropdownMenuItem(value:'high', child:Text('Cao')),
+                         ],
+                         onChanged: (v) { if(v != null) setState(() => _priorityFilter = v); },
+                       ),
+                       const SizedBox(height: 8),
+                       const Text('Người phụ trách: sẽ bổ sung khi hoàn thành phần C.',
+                           style: TextStyle(color: Colors.black54, fontSize: 12)),
+                       const SizedBox(height: 8),
+                       OutlinedButton.icon(
+                         onPressed: () => setState(() {
+                           _search.clear();
+                           _statusFilter = 'all';
+                           _priorityFilter = 'all';
+                         }),
+                         icon: const Icon(Icons.filter_alt_off_outlined),
+                         label: const Text('Xóa bộ lọc'),
+                       ),
+                       const SizedBox(height: 12),
+                       Text('Hiển thị: ${_visibleTasks.length}/${_tasks.length} công việc'),
+                       const SizedBox(height: 10),
+                       if (_visibleTasks.isEmpty)
                         const Card(child: Padding(
                           padding: EdgeInsets.all(24),
                           child: Center(child: Text('Chưa có công việc nào.')),
                         )),
-                      for (final task in _tasks)
+                       for (final task in _visibleTasks)
                         Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           clipBehavior: Clip.antiAlias,
