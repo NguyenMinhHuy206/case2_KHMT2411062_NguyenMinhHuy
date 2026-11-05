@@ -143,6 +143,32 @@ module.exports = function createTaskRouter(auth) {
     } catch (error) { return error500(res, error); }
   });
 
+  // B5: Cap nhat ngay bat dau va han hoan thanh; kiem tra JWT, chu so huu, thu tu ngay.
+  router.patch('/:id/dates', auth, (req, res) => {
+    try {
+      const body = req.body || {};
+      if (!Object.prototype.hasOwnProperty.call(body, 'startDate') ||
+          !Object.prototype.hasOwnProperty.call(body, 'dueDate')) {
+        return res.status(400).json({ message: 'Can gui startDate va dueDate (YYYY-MM-DD hoac null).' });
+      }
+      const tasks = readTasks();
+      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      if (index < 0) {
+        return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
+      }
+      const check = validateFields({ ...tasks[index], startDate: body.startDate, dueDate: body.dueDate });
+      if (check.error) return res.status(400).json({ message: check.error });
+      const updated = {
+        ...tasks[index],
+        startDate: check.fields.startDate,
+        dueDate: check.fields.dueDate,
+        updatedAt: new Date().toISOString()
+      };
+      tasks[index] = updated;
+      saveTasks(tasks);
+      return res.json({ message: 'Cap nhat ngay bat dau va han hoan thanh thanh cong.', task: updated });
+    } catch (error) { return error500(res, error); }
+  });
   // B2: Xóa, chỉ chủ sở hữu được phép thao tác.
   router.delete('/:id', auth, (req, res) => {
     try {

@@ -598,6 +598,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   bool _deleting = false;
   bool _updatingStatus = false;
   bool _updatingPriority = false;
+  bool _updatingDates = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -679,6 +680,91 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
 
+  // B5 - Thiet lap ngay bat dau va han hoan thanh tren man hinh chi tiet.
+  String _b5Iso(DateTime? date) {
+    if (date == null) { return ''; }
+    String pad(int x) => x.toString().padLeft(2, '0');
+    return '${date.year}-${pad(date.month)}-${pad(date.day)}';
+  }
+  Future<void> _changeDates() async {
+    if (_task == null || _updatingDates || _updatingPriority || _updatingStatus || _deleting) { return; }
+    DateTime? start = DateTime.tryParse((_task!['startDate'] ?? '').toString());
+    DateTime? due = DateTime.tryParse((_task!['dueDate'] ?? '').toString());
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, updateDialog) => AlertDialog(
+          title: const Text('B5 - Thiết lập thời gian'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.calendar_today),
+              title: const Text('Ngày bắt đầu'),
+              subtitle: Text(start == null ? 'Chưa đặt' : _date(_b5Iso(start))),
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: dialogContext,
+                  initialDate: start ?? DateTime.now(),
+                  firstDate: DateTime(2000), lastDate: DateTime(2100),
+                );
+                if (picked != null) { updateDialog(() => start = picked); }
+              },
+              trailing: IconButton(
+                tooltip: 'Bỏ ngày bắt đầu',
+                onPressed: () => updateDialog(() => start = null),
+                icon: const Icon(Icons.clear),
+              ),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.event),
+              title: const Text('Hạn hoàn thành'),
+              subtitle: Text(due == null ? 'Chưa đặt' : _date(_b5Iso(due))),
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: dialogContext,
+                  initialDate: due ?? start ?? DateTime.now(),
+                  firstDate: DateTime(2000), lastDate: DateTime(2100),
+                );
+                if (picked != null) { updateDialog(() => due = picked); }
+              },
+              trailing: IconButton(
+                tooltip: 'Bỏ hạn hoàn thành',
+                onPressed: () => updateDialog(() => due = null),
+                icon: const Icon(Icons.clear),
+              ),
+            ),
+            const Text('Hạn hoàn thành không được trước ngày bắt đầu.'),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Hủy')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Lưu ngày')),
+          ],
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) { return; }
+    if (start != null && due != null && due!.isBefore(start!)) {
+      showError(context, 'Hạn hoàn thành phải từ ngày bắt đầu trở đi.');
+      return;
+    }
+    setState(() => _updatingDates = true);
+    try {
+      final response = await Api.request('PATCH', '/api/tasks/${widget.taskId}/dates', {
+        'startDate': start == null ? null : _b5Iso(start),
+        'dueDate': due == null ? null : _b5Iso(due),
+      });
+      if (!mounted) { return; }
+      setState(() => _task = Map<String, dynamic>.from(response['task'] as Map));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cập nhật ngày thành công.')),
+      );
+    } catch (e) {
+      if (mounted) { showError(context, e); }
+    } finally {
+      if (mounted) { setState(() => _updatingDates = false); }
+    }
+  }
   Future<void> _edit() async {
     if (_task == null) return;
     final changed = await Navigator.push<bool>(context, MaterialPageRoute(
@@ -793,6 +879,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               ),
               _item('Ngày bắt đầu', _date(_task!['startDate']), Icons.today),
               _item('Hạn hoàn thành', _date(_task!['dueDate']), Icons.event),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                child: OutlinedButton.icon(
+                  onPressed: (_updatingDates || _updatingStatus || _updatingPriority || _deleting) ? null : _changeDates,
+                  icon: const Icon(Icons.edit_calendar_outlined),
+                  label: Text(_updatingDates ? 'Đang lưu ngày...' : 'B5 - Chọn ngày bắt đầu và hạn hoàn thành'),
+                ),
+              ),
               _item('Thời gian tạo', _date(_task!['createdAt']), Icons.access_time),
             ])),
             const SizedBox(height: 20),
