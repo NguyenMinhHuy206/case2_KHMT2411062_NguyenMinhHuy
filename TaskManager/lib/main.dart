@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+part 'c_features/c1_assign.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -185,6 +186,225 @@ class AuthLayout extends StatelessWidget {
   );
 }
 
+class LoginAuthLayout extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  const LoginAuthLayout({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const navy = Color(0xFF172542);
+    const muted = Color(0xFF7785A0);
+    const blue = Color(0xFF509AF1);
+
+    final loginTheme = Theme.of(context).copyWith(
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFFFAFCFF),
+        labelStyle: const TextStyle(color: muted),
+        floatingLabelStyle: const TextStyle(color: blue),
+        prefixIconColor: const Color(0xFF67758E),
+        suffixIconColor: const Color(0xFF67758E),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 18,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: Color(0xFFCBDAF4)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: blue, width: 1.7),
+        ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: blue,
+          foregroundColor: Colors.white,
+          minimumSize: const Size(double.infinity, 54),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F8FF),
+      body: Stack(
+        children: [
+          Positioned(
+            right: -100,
+            top: -125,
+            child: Container(
+              width: 290,
+              height: 290,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFD8E9FF),
+              ),
+            ),
+          ),
+          Positioned(
+            left: -130,
+            bottom: -150,
+            child: Container(
+              width: 300,
+              height: 300,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFDDEBFF),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 22,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - 44,
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints:
+                            const BoxConstraints(maxWidth: 430),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 28),
+                            Center(
+                              child: Container(
+                                width: 70,
+                                height: 70,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD7E9FF),
+                                  borderRadius:
+                                      BorderRadius.circular(22),
+                                ),
+                                child: const Icon(
+                                  Icons.fact_check_outlined,
+                                  size: 37,
+                                  color: Color(0xFF236BC9),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 17),
+                            const Text(
+                              'Task Manager',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w800,
+                                color: navy,
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            const Text(
+                              'Quản lý công việc đơn giản và hiệu quả',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: muted,
+                              ),
+                            ),
+                            const SizedBox(height: 35),
+                            Container(
+                              padding: const EdgeInsets.fromLTRB(
+                                22, 30, 22, 25,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius:
+                                    BorderRadius.circular(27),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x183F73BC),
+                                    blurRadius: 28,
+                                    offset: Offset(0, 12),
+                                  ),
+                                ],
+                              ),
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: const TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w800,
+                                      color: navy,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 7),
+                                  Text(
+                                    subtitle,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: muted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 28),
+                                  Theme(
+                                    data: loginTheme,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: children,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 34),
+                            const Text(
+                              'TASK MANAGER  •  CASE STUDY 2',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: muted,
+                                letterSpacing: 1.8,
+                                fontSize: 10,
+                              ),
+                            ),
+                            const SizedBox(height: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 class LoginScreen extends StatefulWidget {
   final VoidCallback onSuccess;
   const LoginScreen({super.key,required this.onSuccess});
@@ -204,7 +424,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if(mounted)widget.onSuccess();
     }catch(e){if(mounted)showError(context,e);}finally{if(mounted)setState(()=>busy=false);}
   }
-  @override Widget build(BuildContext context)=>AuthLayout(title:'Đăng nhập',subtitle:'Chào mừng bạn quay lại Task Manager',children:[
+  @override Widget build(BuildContext context)=>LoginAuthLayout(title:'Đăng nhập',subtitle:'Chào mừng bạn quay lại Task Manager',children:[
     Form(key:formKey,child:Column(children:[
       TextFormField(controller:email,keyboardType:TextInputType.emailAddress,decoration:const InputDecoration(labelText:'Email',prefixIcon:Icon(Icons.mail_outline)),validator:(v)=>v==null||!v.contains('@')?'Nhập email hợp lệ':null),
       const SizedBox(height:14),TextFormField(controller:password,obscureText:hide,decoration:InputDecoration(labelText:'Mật khẩu',prefixIcon:const Icon(Icons.lock_outline),suffixIcon:IconButton(icon:Icon(hide?Icons.visibility_outlined:Icons.visibility_off_outlined),onPressed:()=>setState(()=>hide=!hide))),validator:(v)=>v==null||v.isEmpty?'Vui lòng nhập mật khẩu':null),
@@ -229,7 +449,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       Navigator.pop(context);
     }catch(e){if(mounted)showError(context,e);}finally{if(mounted)setState(()=>busy=false);}
   }
-  @override Widget build(BuildContext context)=>AuthLayout(title:'Tạo tài khoản',subtitle:'Bắt đầu quản lý công việc cùng Task Manager',children:[
+  @override Widget build(BuildContext context)=>LoginAuthLayout(title:'Tạo tài khoản',subtitle:'Bắt đầu quản lý công việc cùng Task Manager',children:[
     Form(key:keyForm,child:Column(children:[
       TextFormField(controller:name,decoration:const InputDecoration(labelText:'Họ và tên',prefixIcon:Icon(Icons.person_outline)),validator:(v)=>(v??'').trim().length<2?'Nhập họ tên ít nhất 2 ký tự':null),
       const SizedBox(height:13),TextFormField(controller:email,keyboardType:TextInputType.emailAddress,decoration:const InputDecoration(labelText:'Email',prefixIcon:Icon(Icons.mail_outline)),validator:(v)=>v==null||!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v.trim())?'Email không hợp lệ':null),
@@ -337,7 +557,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(count?.toString() ?? '—', style: const TextStyle(
           fontSize: 25, fontWeight: FontWeight.w800, color: Color(0xFF18243D))),
         const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF697891))),
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF697891))),
       ]),
     ));
   }
@@ -361,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(title, style: const TextStyle(
                 fontWeight: FontWeight.w700, fontSize: 14, color: Color(0xFF1C2941))),
               const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(fontSize: 11, color: Color(0xFF7B879C))),
+              Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF7B879C))),
             ])),
             const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA7BB)),
           ]),
@@ -409,7 +629,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Text('CHÀO MỪNG TRỞ LẠI', style: TextStyle(
-                    color: Color(0xFFDDE7FF), fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w700)),
+                    color: Color(0xFFDDE7FF), fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 12),
                   Text('Xin chào, $displayName!',
                     maxLines: 2, overflow: TextOverflow.ellipsis,
@@ -936,10 +1156,10 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                     children: [
-                      Text('Công việc do bạn tạo: ${_tasks.length}',
+                      Text('Công việc liên quan: ${_tasks.length}',
                           style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 6),
-                      const Text('Công việc được giao, nhận và chia sẻ sẽ được tích hợp ở phần C.',
+                      const Text('Công việc bạn tạo hoặc được giao. Chia sẻ sẽ bổ sung ở C3.',
                           style: TextStyle(color: Colors.black54)),
                       const SizedBox(height: 18),
                        // B6: Search title and filter by status/priority.
@@ -1100,6 +1320,8 @@ class TaskDetailScreen extends StatefulWidget {
 
 class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Map<String, dynamic>? _task;
+  bool _canManage = false;
+  bool _canChangeStatus = false;
   String? _error;
   bool _loading = true;
   bool _deleting = false;
@@ -1115,7 +1337,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     try {
       final response = await Api.request('GET', '/api/tasks/${widget.taskId}');
       if (!mounted) return;
-      setState(() { _task = Map<String, dynamic>.from(response['task'] as Map); _loading = false; });
+      setState(() { _task = Map<String, dynamic>.from(response['task'] as Map); _canManage = response['canManage'] == true; _canChangeStatus = response['canChangeStatus'] == true; _loading = false; });
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
@@ -1349,7 +1571,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     DropdownMenuItem(value: 'in_progress', child: Text('Đang thực hiện')),
                     DropdownMenuItem(value: 'completed', child: Text('Đã hoàn thành')),
                   ],
-                  onChanged: (_updatingStatus || _updatingPriority || _deleting) ? null : (value) {
+                  onChanged: (!_canChangeStatus || _updatingStatus || _updatingPriority || _deleting) ? null : (value) {
                     if (value != null) _changeStatus(value);
                   },
                 ),
@@ -1375,7 +1597,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     DropdownMenuItem(value: 'medium', child: Text('Trung bình')),
                     DropdownMenuItem(value: 'high', child: Text('Cao')),
                   ],
-                  onChanged: (_updatingStatus || _updatingPriority || _deleting) ? null : (value) {
+                  onChanged: (!_canManage || _updatingStatus || _updatingPriority || _deleting) ? null : (value) {
                     if (value != null) _changePriority(value);
                   },
                 ),
@@ -1389,7 +1611,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
                 child: OutlinedButton.icon(
-                  onPressed: (_updatingDates || _updatingStatus || _updatingPriority || _deleting) ? null : _changeDates,
+                  onPressed: (!_canManage || _updatingDates || _updatingStatus || _updatingPriority || _deleting) ? null : _changeDates,
                   icon: const Icon(Icons.edit_calendar_outlined),
                   label: Text(_updatingDates ? 'Đang lưu ngày...' : 'B5 - Chọn ngày bắt đầu và hạn hoàn thành'),
                 ),
@@ -1397,10 +1619,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               _item('Thời gian tạo', _date(_task!['createdAt']), Icons.access_time),
             ])),
             const SizedBox(height: 20),
-            FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _edit,
+             if (_canManage) OutlinedButton.icon(
+               onPressed: () async {
+                 final changed = await Navigator.push<bool>(context,
+                   MaterialPageRoute(builder: (_) => C1AssignScreen(taskId: widget.taskId)));
+                 if (changed == true && mounted) await _load();
+               },
+               icon: const Icon(Icons.group_add_outlined),
+               label: const Text('C1 - Giao việc theo email')),
+             if (_canManage) const SizedBox(height: 10),
+            if (_canManage) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _edit,
               icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
             const SizedBox(height: 10),
-            OutlinedButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _delete,
+            if (_canManage) OutlinedButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _delete,
               icon: const Icon(Icons.delete_outline),
               label: Text(_deleting ? 'Đang xóa...' : 'Xóa công việc'),
               style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700)),
