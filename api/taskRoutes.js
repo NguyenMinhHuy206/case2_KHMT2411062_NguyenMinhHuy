@@ -1,41 +1,47 @@
 'use strict';
+
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
+const mongoose = require('mongoose');
+const User = require('./models/User');
+const Task = require('./models/Task');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
-  const DB = path.join(__dirname, 'tasks.json');
-  const USER_DB = path.join(__dirname, 'users.json');
-  function readMembers() {
-    const raw = fs.readFileSync(USER_DB, 'utf8').replace(/^\uFEFF/, '');
-    const users = JSON.parse(raw);
-    if (!Array.isArray(users)) throw new Error('Invalid users.json');
-    return users;
+
+  function publicUserId(user) {
+    return user.legacyId || String(user._id);
   }
 
-  function readTasks() {
-    if (!fs.existsSync(DB)) return [];
-    const raw = fs.readFileSync(DB, 'utf8').replace(/^\uFEFF/, '').trim();
-    const tasks = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(tasks)) throw new Error('tasks.json must contain an array');
-    return tasks;
+  function publicTaskId(task) {
+    return task.legacyId || String(task._id);
   }
-  function saveTasks(tasks) {
-    const temp = DB + '.tmp';
-    fs.writeFileSync(temp, JSON.stringify(tasks, null, 2), 'utf8');
-    fs.renameSync(temp, DB);
+
+  function objectIdString(value) {
+    return value == null ? null : String(value);
   }
+
+  function idFilter(id) {
+    const conditions = [{ legacyId: String(id) }];
+    if (/^[\da-f]{24}$/i.test(String(id))) {
+      conditions.push({ _id: new mongoose.Types.ObjectId(String(id)) });
+    }
+    return { $or: conditions };
+  }
+
+  function dateOnly(date) {
+    return date == null ? null : new Date(date).toISOString().slice(0, 10);
+  }
+
   function validDate(date) {
     if (date === null) return true;
     if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
     const d = new Date(`${date}T00:00:00.000Z`);
-    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === date;
+    return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === date;
   }
+
   function validateFields(body) {
     const title = typeof body.title === 'string' ? body.title.trim() : '';
-    const description = body.description === undefined || body.description === null ? '' : body.description;
+    const description = body.description == null ? '' : body.description;
     const status = body.status ?? 'pending';
     const priority = body.priority ?? 'medium';
     const startDate = body.startDate === '' ? null : (body.startDate ?? null);
@@ -48,190 +54,269 @@ module.exports = function createTaskRouter(auth) {
     if (startDate && dueDate && dueDate < startDate) return { error: 'Hạn hoàn thành phải từ ngày bắt đầu trở đi.' };
     return { fields: { title, description, status, priority, startDate, dueDate } };
   }
+
+  function dateAsMongo(value) {
+    return value == null ? null : new Date(`${value}T00:00:00.000Z`);
+  }
+
   function error500(res, error) {
     console.error(error);
     return res.status(500).json({ message: 'Lỗi máy chủ.' });
   }
+
   function canReadTask(task, userId) {
-    return task.createdBy === userId ||
-      (Array.isArray(task.assigneeIds) && task.assigneeIds.includes(userId));
+    return objectIdString(task.createdBy) === objectIdString(userId) ||
+      (task.assigneeIds || []).some(id => objectIdString(id) === objectIdString(userId));
   }
-  function ownTask(req, res) {
-    const task = readTasks().find(t => t.id === req.params.id);
-    if (!task || !canReadTask(task, req.user.id)) {
-      res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền truy cập.' });
-      return null;
-    }
+
+  function canManageTask(task, userId) {
+    return objectIdString(task.createdBy) === objectIdString(userId);
+  }
+
+  async function taskForRequest(id, userId) {
+    const task = await Task.findOne(idFilter(id)).lean();
+    if (!task || !canReadTask(task, userId)) return null;
     return task;
   }
 
-  // B1: Danh sách công việc do người dùng tạo.
-  router.get('/', auth, (req, res) => {
+  async function userDictionary(taskList) {
+    const ids = new Set();
+    for (const task of taskList) {
+      if (task.createdBy) ids.add(String(task.createdBy));
+      for (const id of task.assigneeIds || []) ids.add(String(id));
+      if (task.primaryAssigneeId) ids.add(String(task.primaryAssigneeId));
+    }
+    if (!ids.size) return new Map();
+    const users = await User.find({ _id: { $in: [...ids] } }).lean();
+    return new Map(users.map(user => [String(user._id), publicUserId(user)]));
+  }
+
+  function toClientTask(task, users) {
+    const mapId = value => value == null ? null :
+      (users.get(String(value)) || String(value));
+    return {
+      id: publicTaskId(task),
+      title: task.title,
+      description: task.description ?? '',
+      status: task.status === 'todo' ? 'pending' : task.status,
+      priority: task.priority,
+      startDate: dateOnly(task.startDate),
+      dueDate: dateOnly(task.dueDate),
+      createdBy: mapId(task.createdBy),
+      assigneeIds: (task.assigneeIds || []).map(mapId),
+      primaryAssigneeId: mapId(task.primaryAssigneeId),
+      shares: [], // C3 chua trien khai, du lieu cu rong.
+      createdAt: new Date(task.createdAt).toISOString(),
+      updatedAt: new Date(task.updatedAt).toISOString()
+    };
+  }
+
+  async function clientTask(task) {
+    const plain = typeof task.toObject === 'function' ? task.toObject() : task;
+    const users = await userDictionary([plain]);
+    return toClientTask(plain, users);
+  }
+
+  // B1: Danh sach cong viec do nguoi dung tao hoac duoc giao.
+  router.get('/', auth, async (req, res) => {
     try {
-      const tasks = readTasks()
-        .filter(t => canReadTask(t, req.user.id))
-        .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
-      return res.json({ total: tasks.length, tasks });
+      const tasks = await Task.find({
+        $or: [{ createdBy: req.user._id }, { assigneeIds: req.user._id }]
+      }).sort({ createdAt: -1 }).lean();
+      const users = await userDictionary(tasks);
+      return res.json({ total: tasks.length, tasks: tasks.map(t => toClientTask(t, users)) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B2: Tạo công việc.
-  router.post('/', auth, (req, res) => {
+  // B2: Tao cong viec.
+  router.post('/', auth, async (req, res) => {
     try {
       const check = validateFields(req.body || {});
       if (check.error) return res.status(400).json({ message: check.error });
-      const now = new Date().toISOString();
-      const task = {
-        id: crypto.randomUUID(), ...check.fields,
-        createdBy: req.user.id, assigneeIds: [], primaryAssigneeId: null, shares: [], createdAt: now, updatedAt: now
-      };
-      const tasks = readTasks();
-      tasks.push(task);
-      saveTasks(tasks);
-      return res.status(201).json({ message: 'Tạo công việc thành công.', task });
+      const fields = check.fields;
+      const task = await Task.create({
+        title: fields.title, description: fields.description,
+        status: fields.status, priority: fields.priority,
+        startDate: dateAsMongo(fields.startDate), dueDate: dateAsMongo(fields.dueDate),
+        createdBy: req.user._id, assigneeIds: [], primaryAssigneeId: null
+      });
+      return res.status(201).json({ message: 'Tạo công việc thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B2: Xem chi tiết.
-  router.get('/:id', auth, (req, res) => {
+  // B2: Chi tiet cong viec.
+  router.get('/:id', auth, async (req, res) => {
     try {
-      const task = ownTask(req, res);
-      if (!task) return;
-      return res.json({ task, canManage: task.createdBy === req.user.id,
-        canChangeStatus: task.createdBy === req.user.id || (task.assigneeIds || []).includes(req.user.id) });
+      const task = await taskForRequest(req.params.id, req.user._id);
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền truy cập.' });
+      return res.json({
+        task: await clientTask(task),
+        canManage: canManageTask(task, req.user._id),
+        canChangeStatus: canReadTask(task, req.user._id)
+      });
     } catch (error) { return error500(res, error); }
   });
 
-  // B2: Chỉnh sửa. Thay thế bộ trường có thể chỉnh sửa, giữ nguyên ID và chủ sở hữu.
-  router.put('/:id', auth, (req, res) => {
+  // B2: Sua noi dung; chi nguoi tao duoc phep.
+  router.put('/:id', auth, async (req, res) => {
     try {
-      const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
-      if (index < 0) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền chỉnh sửa.' });
-      const check = validateFields({ ...tasks[index], ...(req.body || {}) });
+      const task = await Task.findOne({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      });
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền chỉnh sửa.' });
+      const check = validateFields({
+        title: task.title, description: task.description, status: task.status === 'todo' ? 'pending' : task.status,
+        priority: task.priority, startDate: dateOnly(task.startDate), dueDate: dateOnly(task.dueDate),
+        ...(req.body || {})
+      });
       if (check.error) return res.status(400).json({ message: check.error });
-      const task = { ...tasks[index], ...check.fields, updatedAt: new Date().toISOString() };
-      tasks[index] = task;
-      saveTasks(tasks);
-      return res.json({ message: 'Cập nhật công việc thành công.', task });
+      Object.assign(task, {
+        title: check.fields.title, description: check.fields.description,
+        status: check.fields.status, priority: check.fields.priority,
+        startDate: dateAsMongo(check.fields.startDate), dueDate: dateAsMongo(check.fields.dueDate)
+      });
+      await task.save();
+      return res.json({ message: 'Cập nhật công việc thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B3: Cap nhat rieng trang thai. Chi nguoi tao duoc doi trang thai.
-  router.patch('/:id/status', auth, (req, res) => {
+  // B3: Nguoi tao hoac nguoi duoc giao duoc cap nhat trang thai.
+  router.patch('/:id/status', auth, async (req, res) => {
     try {
       const status = req.body?.status;
       if (!['pending', 'in_progress', 'completed'].includes(status)) {
-        return res.status(400).json({ message: 'Trang thai khong hop le.' });
+        return res.status(400).json({ message: 'Trạng thái không hợp lệ.' });
       }
-      const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && (t.createdBy === req.user.id || (Array.isArray(t.assigneeIds) && t.assigneeIds.includes(req.user.id))));
-      if (index < 0) {
-        return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
-      }
-      const updated = { ...tasks[index], status, updatedAt: new Date().toISOString() };
-      tasks[index] = updated;
-      saveTasks(tasks);
-      return res.json({ message: 'Cap nhat trang thai thanh cong.', task: updated });
+      const task = await Task.findOneAndUpdate({
+        $and: [
+          idFilter(req.params.id),
+          { $or: [{ createdBy: req.user._id }, { assigneeIds: req.user._id }] }
+        ]
+      }, { $set: { status } }, { new: true, runValidators: true });
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      return res.json({ message: 'Cập nhật trạng thái thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B4: Cap nhat rieng muc do uu tien (low / medium / high).
-  router.patch('/:id/priority', auth, (req, res) => {
+  // B4: Chi nguoi tao duoc cap nhat uu tien.
+  router.patch('/:id/priority', auth, async (req, res) => {
     try {
       const priority = req.body?.priority;
       if (!['low', 'medium', 'high'].includes(priority)) {
-        return res.status(400).json({ message: 'Muc do uu tien khong hop le.' });
+        return res.status(400).json({ message: 'Mức độ ưu tiên không hợp lệ.' });
       }
-      const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
-      if (index < 0) {
-        return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
-      }
-      const updated = { ...tasks[index], priority, updatedAt: new Date().toISOString() };
-      tasks[index] = updated;
-      saveTasks(tasks);
-      return res.json({ message: 'Cap nhat muc do uu tien thanh cong.', task: updated });
+      const task = await Task.findOneAndUpdate({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      }, { $set: { priority } }, { new: true, runValidators: true });
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      return res.json({ message: 'Cập nhật mức độ ưu tiên thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B5: Cap nhat ngay bat dau va han hoan thanh; kiem tra JWT, chu so huu, thu tu ngay.
-  router.patch('/:id/dates', auth, (req, res) => {
+  // B5: Chi nguoi tao duoc sua ngay bat dau / han hoan thanh.
+  router.patch('/:id/dates', auth, async (req, res) => {
     try {
       const body = req.body || {};
       if (!Object.prototype.hasOwnProperty.call(body, 'startDate') ||
           !Object.prototype.hasOwnProperty.call(body, 'dueDate')) {
-        return res.status(400).json({ message: 'Can gui startDate va dueDate (YYYY-MM-DD hoac null).' });
+        return res.status(400).json({ message: 'Cần gửi startDate và dueDate (YYYY-MM-DD hoặc null).' });
       }
-      const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
-      if (index < 0) {
-        return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
-      }
-      const check = validateFields({ ...tasks[index], startDate: body.startDate, dueDate: body.dueDate });
+      const task = await Task.findOne({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      });
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      const check = validateFields({
+        title: task.title, description: task.description,
+        status: task.status === 'todo' ? 'pending' : task.status, priority: task.priority,
+        startDate: body.startDate, dueDate: body.dueDate
+      });
       if (check.error) return res.status(400).json({ message: check.error });
-      const updated = {
-        ...tasks[index],
-        startDate: check.fields.startDate,
-        dueDate: check.fields.dueDate,
-        updatedAt: new Date().toISOString()
-      };
-      tasks[index] = updated;
-      saveTasks(tasks);
-      return res.json({ message: 'Cap nhat ngay bat dau va han hoan thanh thanh cong.', task: updated });
+      task.startDate = dateAsMongo(check.fields.startDate);
+      task.dueDate = dateAsMongo(check.fields.dueDate);
+      await task.save();
+      return res.json({ message: 'Cập nhật ngày bắt đầu và hạn hoàn thành thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
-  // B2: Xóa, chỉ chủ sở hữu được phép thao tác.
-  router.delete('/:id', auth, (req, res) => {
+
+  // B2: Xoa cong viec; chi chu so huu.
+  router.delete('/:id', auth, async (req, res) => {
     try {
-      const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
-      if (index < 0) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền xóa.' });
-      tasks.splice(index, 1);
-      saveTasks(tasks);
+      const task = await Task.findOneAndDelete({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      });
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền xóa.' });
       return res.json({ message: 'Xóa công việc thành công.' });
     } catch (error) { return error500(res, error); }
   });
 
-  // C1_TASK_ASSIGNMENT: email lookup and multi-user assignment.
-  router.get('/members/search', auth, (req, res) => {
+  // C1: Tim tai khoan theo email, khong tra ve passwordHash.
+  router.get('/members/search', auth, async (req, res) => {
     try {
       const email = String(req.query.email || '').trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-        return res.status(400).json({ message: 'Nhap email day du va hop le.' });
-      const user = readMembers().find(u => u.id !== req.user.id && String(u.email || '').toLowerCase() === email);
-      if (!user) return res.status(404).json({ message: 'Khong tim thay tai khoan voi email nay.' });
-      return res.json({ user: { id: user.id, name: user.name, email: user.email } });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ message: 'Nhập email đầy đủ và hợp lệ.' });
+      }
+      const user = await User.findOne({ email }).lean();
+      if (!user || String(user._id) === String(req.user._id)) {
+        return res.status(404).json({ message: 'Không tìm thấy tài khoản với email này.' });
+      }
+      return res.json({ user: { id: publicUserId(user), name: user.fullName, email: user.email } });
     } catch (error) { return error500(res, error); }
   });
-  router.get('/:id/assignees', auth, (req, res) => {
+
+  router.get('/:id/assignees', auth, async (req, res) => {
     try {
-      const task = ownTask(req, res); if (!task) return;
-      const users = readMembers();
-      const ids = Array.isArray(task.assigneeIds) ? task.assigneeIds : [];
-      const assignees = ids.map(id => users.find(u => u.id === id)).filter(Boolean)
-        .map(u => ({id:u.id,name:u.name,email:u.email}));
-      return res.json({ assignees, primaryAssigneeId: task.primaryAssigneeId || null });
+      const task = await taskForRequest(req.params.id, req.user._id);
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền truy cập.' });
+      const users = await User.find({ _id: { $in: task.assigneeIds || [] } }).lean();
+      const dict = new Map(users.map(u => [String(u._id), u]));
+      const assignees = (task.assigneeIds || []).map(id => dict.get(String(id))).filter(Boolean)
+        .map(u => ({ id: publicUserId(u), name: u.fullName, email: u.email }));
+      const primary = task.primaryAssigneeId == null ? null : dict.get(String(task.primaryAssigneeId));
+      return res.json({ assignees, primaryAssigneeId: primary ? publicUserId(primary) : null });
     } catch (error) { return error500(res, error); }
   });
-  router.put('/:id/assignees', auth, (req, res) => {
+
+  router.put('/:id/assignees', auth, async (req, res) => {
     try {
-      const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
-      if (index < 0) return res.status(403).json({ message:'Chi nguoi tao duoc giao viec.' });
+      const task = await Task.findOne({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      });
+      if (!task) return res.status(403).json({ message: 'Chỉ người tạo được giao việc.' });
+
       const ids = req.body?.userIds;
-      if (!Array.isArray(ids) || ids.length > 30 || ids.some(id => typeof id !== 'string' || !id))
-        return res.status(400).json({ message:'Danh sach nguoi duoc giao khong hop le (toi da 30).' });
-      if (new Set(ids).size !== ids.length) return res.status(400).json({ message:'Nguoi duoc giao bi trung.' });
-      if (ids.includes(req.user.id)) return res.status(400).json({ message:'Nguoi tao khong can tu giao viec cho minh.' });
-      const users = readMembers();
-      if (ids.some(id => !users.some(u => u.id === id))) return res.status(400).json({ message:'Co tai khoan khong ton tai.' });
-      const task = tasks[index];
-      task.assigneeIds = ids;
-      if (task.primaryAssigneeId && !ids.includes(task.primaryAssigneeId)) task.primaryAssigneeId = null;
-      task.updatedAt = new Date().toISOString();
-      saveTasks(tasks);
-      return res.json({ message:'Giao viec thanh cong.', task });
+      if (!Array.isArray(ids) || ids.length > 30 || ids.some(id => typeof id !== 'string' || !id)) {
+        return res.status(400).json({ message: 'Danh sách người được giao không hợp lệ (tối đa 30).' });
+      }
+      if (new Set(ids).size !== ids.length) {
+        return res.status(400).json({ message: 'Người được giao bị trùng.' });
+      }
+      if (ids.includes(req.user.id) || ids.includes(String(req.user._id))) {
+        return res.status(400).json({ message: 'Người tạo không cần tự giao việc cho mình.' });
+      }
+      const objectIds = ids.filter(id => /^[\da-f]{24}$/i.test(id))
+        .map(id => new mongoose.Types.ObjectId(id));
+      const users = ids.length ? await User.find({
+        $or: [{ legacyId: { $in: ids } }, { _id: { $in: objectIds } }]
+      }).lean() : [];
+      const byPublicId = new Map(users.map(u => [publicUserId(u), u]));
+      const byMongoId = new Map(users.map(u => [String(u._id), u]));
+      const assignees = ids.map(id => byPublicId.get(id) || byMongoId.get(id));
+      if (assignees.some(u => !u)) {
+        return res.status(400).json({ message: 'Có tài khoản không tồn tại.' });
+      }
+      if (new Set(assignees.map(u => String(u._id))).size !== assignees.length) {
+        return res.status(400).json({ message: 'Người được giao bị trùng.' });
+      }
+      if (assignees.some(u => String(u._id) === String(req.user._id))) {
+        return res.status(400).json({ message: 'Người tạo không cần tự giao việc cho mình.' });
+      }
+      task.assigneeIds = assignees.map(u => u._id);
+      if (task.primaryAssigneeId && !task.assigneeIds.some(id => String(id) === String(task.primaryAssigneeId))) {
+        task.primaryAssigneeId = null;
+      }
+      await task.save();
+      return res.json({ message: 'Giao việc thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
