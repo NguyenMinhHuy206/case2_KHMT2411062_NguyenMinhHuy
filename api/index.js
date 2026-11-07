@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
@@ -31,62 +31,62 @@ function auth(req,res,next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   try {
-    if (!token) return res.status(401).json({message:'Báº¡n chÆ°a Ä‘Äƒng nháº­p.'});
+    if (!token) return res.status(401).json({message:'Bạn chưa đăng nhập.'});
     const decoded = jwt.verify(token, SECRET);
     const user = readUsers().find(u=>u.id===decoded.sub);
-    if (!user || (user.tokenVersion||0)!==(decoded.ver||0)) return res.status(401).json({message:'PhiÃªn Ä‘Äƒng nháº­p khÃ´ng há»£p lá»‡.'});
+    if (!user || (user.tokenVersion||0)!==(decoded.ver||0)) return res.status(401).json({message:'Phiên đăng nhập không hợp lệ.'});
     req.user = user;
     next();
-  } catch(e) {return res.status(401).json({message:'PhiÃªn Ä‘Äƒng nháº­p háº¿t háº¡n hoáº·c khÃ´ng há»£p lá»‡.'});}
+  } catch(e) {return res.status(401).json({message:'Phiên đăng nhập hết hạn hoặc không hợp lệ.'});}
 }
 function tokenFor(user) {return jwt.sign({sub:user.id,ver:user.tokenVersion||0}, SECRET, {expiresIn:'7d'});}
 app.get('/health',(req,res)=>res.json({status:'ok'}));
 app.post('/register',async(req,res)=>{
   try {
     const name=String(req.body.name||'').trim(); const email=emailOf(req.body.email); const password=String(req.body.password||'');
-    if(name.length<2||!validEmail(email)||password.length<6) return res.status(400).json({message:'Há» tÃªn tá»‘i thiá»ƒu 2 kÃ½ tá»±, email há»£p lá»‡ vÃ  máº­t kháº©u tá»‘i thiá»ƒu 6 kÃ½ tá»±.'});
-    const users=readUsers(); if(users.some(u=>u.email===email)) return res.status(409).json({message:'Email Ä‘Ã£ Ä‘Æ°á»£c Ä‘Äƒng kÃ½.'});
+    if(name.length<2||!validEmail(email)||password.length<6) return res.status(400).json({message:'Họ tên tối thiểu 2 ký tự, email hợp lệ và mật khẩu tối thiểu 6 ký tự.'});
+    const users=readUsers(); if(users.some(u=>u.email===email)) return res.status(409).json({message:'Email đã được đăng ký.'});
     const user={id:crypto.randomUUID(),name,email,passwordHash:await bcrypt.hash(password,12),tokenVersion:0};
     users.push(user); saveUsers(users);
-    return res.status(201).json({message:'ÄÄƒng kÃ½ thÃ nh cÃ´ng.',user:cleanUser(user),token:tokenFor(user)});
-  } catch(e) {console.error(e);return res.status(500).json({message:'Lá»—i mÃ¡y chá»§.'});}
+    return res.status(201).json({message:'Đăng ký thành công.',user:cleanUser(user),token:tokenFor(user)});
+  } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
 app.post('/login',async(req,res)=>{
   try {
     const email=emailOf(req.body.email); const password=String(req.body.password||'');
     const user=readUsers().find(u=>u.email===email);
-    if(!user||!(await bcrypt.compare(password,user.passwordHash))) return res.status(401).json({message:'Email hoáº·c máº­t kháº©u khÃ´ng Ä‘Ãºng.'});
-    return res.json({message:'ÄÄƒng nháº­p thÃ nh cÃ´ng.',user:cleanUser(user),token:tokenFor(user)});
-  } catch(e) {console.error(e);return res.status(500).json({message:'Lá»—i mÃ¡y chá»§.'});}
+    if(!user||!(await bcrypt.compare(password,user.passwordHash))) return res.status(401).json({message:'Email hoặc mật khẩu không đúng.'});
+    return res.json({message:'Đăng nhập thành công.',user:cleanUser(user),token:tokenFor(user)});
+  } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
 app.get('/me',auth,(req,res)=>res.json({user:cleanUser(req.user)}));
 app.put('/me',auth,(req,res)=>{
   try {
     const name=String(req.body.name||'').trim(); const email=emailOf(req.body.email);
-    if(name.length<2||!validEmail(email)) return res.status(400).json({message:'Há» tÃªn hoáº·c email khÃ´ng há»£p lá»‡.'});
+    if(name.length<2||!validEmail(email)) return res.status(400).json({message:'Họ tên hoặc email không hợp lệ.'});
     const users=readUsers();
-    if(users.some(u=>u.id!==req.user.id&&u.email===email)) return res.status(409).json({message:'Email Ä‘Ã£ Ä‘Æ°á»£c sá»­ dá»¥ng.'});
+    if(users.some(u=>u.id!==req.user.id&&u.email===email)) return res.status(409).json({message:'Email đã được sử dụng.'});
     const user=users.find(u=>u.id===req.user.id); user.name=name;user.email=email;saveUsers(users);
-    return res.json({message:'Cáº­p nháº­t thÃ´ng tin thÃ nh cÃ´ng.',user:cleanUser(user)});
-  } catch(e) {console.error(e);return res.status(500).json({message:'Lá»—i mÃ¡y chá»§.'});}
+    return res.json({message:'Cập nhật thông tin thành công.',user:cleanUser(user)});
+  } catch(e) {console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
 app.put('/change-password',auth,async(req,res)=>{
   try {
     const oldPassword=String(req.body.oldPassword||'');const newPassword=String(req.body.newPassword||'');
-    if(newPassword.length<6)return res.status(400).json({message:'Máº­t kháº©u má»›i pháº£i cÃ³ Ã­t nháº¥t 6 kÃ½ tá»±.'});
-    if(!(await bcrypt.compare(oldPassword,req.user.passwordHash)))return res.status(400).json({message:'Máº­t kháº©u hiá»‡n táº¡i khÃ´ng Ä‘Ãºng.'});
-    if(oldPassword===newPassword)return res.status(400).json({message:'Máº­t kháº©u má»›i pháº£i khÃ¡c máº­t kháº©u cÅ©.'});
+    if(newPassword.length<6)return res.status(400).json({message:'Mật khẩu mới phải có ít nhất 6 ký tự.'});
+    if(!(await bcrypt.compare(oldPassword,req.user.passwordHash)))return res.status(400).json({message:'Mật khẩu hiện tại không đúng.'});
+    if(oldPassword===newPassword)return res.status(400).json({message:'Mật khẩu mới phải khác mật khẩu cũ.'});
     const users=readUsers();const user=users.find(u=>u.id===req.user.id);
     user.passwordHash=await bcrypt.hash(newPassword,12);user.tokenVersion=(user.tokenVersion||0)+1;saveUsers(users);
-    return res.json({message:'Äá»•i máº­t kháº©u thÃ nh cÃ´ng. Vui lÃ²ng Ä‘Äƒng nháº­p láº¡i.'});
-  } catch(e){console.error(e);return res.status(500).json({message:'Lá»—i mÃ¡y chá»§.'});}
+    return res.json({message:'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.'});
+  } catch(e){console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
 app.post('/logout',auth,(req,res)=>{
   try {
     const users=readUsers();const user=users.find(u=>u.id===req.user.id);
     user.tokenVersion=(user.tokenVersion||0)+1;saveUsers(users);
-    return res.json({message:'ÄÄƒng xuáº¥t thÃ nh cÃ´ng.'});
-  } catch(e){console.error(e);return res.status(500).json({message:'Lá»—i mÃ¡y chá»§.'});}
+    return res.json({message:'Đăng xuất thành công.'});
+  } catch(e){console.error(e);return res.status(500).json({message:'Lỗi máy chủ.'});}
 });
 app.use('/api/tasks', require('./taskRoutes')(auth));
 app.listen(PORT,'0.0.0.0',()=>console.log(`Server running at http://localhost:${PORT}`));

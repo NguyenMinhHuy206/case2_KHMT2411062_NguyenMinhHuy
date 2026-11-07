@@ -7,6 +7,13 @@ const crypto = require('crypto');
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
   const DB = path.join(__dirname, 'tasks.json');
+  const USER_DB = path.join(__dirname, 'users.json');
+  function readMembers() {
+    const raw = fs.readFileSync(USER_DB, 'utf8').replace(/^\uFEFF/, '');
+    const users = JSON.parse(raw);
+    if (!Array.isArray(users)) throw new Error('Invalid users.json');
+    return users;
+  }
 
   function readTasks() {
     if (!fs.existsSync(DB)) return [];
@@ -45,9 +52,13 @@ module.exports = function createTaskRouter(auth) {
     console.error(error);
     return res.status(500).json({ message: 'Lỗi máy chủ.' });
   }
+  function canReadTask(task, userId) {
+    return task.createdBy === userId ||
+      (Array.isArray(task.assigneeIds) && task.assigneeIds.includes(userId));
+  }
   function ownTask(req, res) {
     const task = readTasks().find(t => t.id === req.params.id);
-    if (!task || task.createdBy !== req.user.id) {
+    if (!task || !canReadTask(task, req.user.id)) {
       res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền truy cập.' });
       return null;
     }
@@ -58,7 +69,7 @@ module.exports = function createTaskRouter(auth) {
   router.get('/', auth, (req, res) => {
     try {
       const tasks = readTasks()
-        .filter(t => t.createdBy === req.user.id)
+        .filter(t => canReadTask(t, req.user.id))
         .sort((a, b) => String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')));
       return res.json({ total: tasks.length, tasks });
     } catch (error) { return error500(res, error); }
@@ -72,7 +83,7 @@ module.exports = function createTaskRouter(auth) {
       const now = new Date().toISOString();
       const task = {
         id: crypto.randomUUID(), ...check.fields,
-        createdBy: req.user.id, createdAt: now, updatedAt: now
+        createdBy: req.user.id, assigneeIds: [], primaryAssigneeId: null, shares: [], createdAt: now, updatedAt: now
       };
       const tasks = readTasks();
       tasks.push(task);
@@ -86,7 +97,8 @@ module.exports = function createTaskRouter(auth) {
     try {
       const task = ownTask(req, res);
       if (!task) return;
-      return res.json({ task });
+      return res.json({ task, canManage: task.createdBy === req.user.id,
+        canChangeStatus: task.createdBy === req.user.id || (task.assigneeIds || []).includes(req.user.id) });
     } catch (error) { return error500(res, error); }
   });
 
@@ -113,7 +125,7 @@ module.exports = function createTaskRouter(auth) {
         return res.status(400).json({ message: 'Trang thai khong hop le.' });
       }
       const tasks = readTasks();
-      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      const index = tasks.findIndex(t => t.id === req.params.id && (t.createdBy === req.user.id || (Array.isArray(t.assigneeIds) && t.assigneeIds.includes(req.user.id))));
       if (index < 0) {
         return res.status(404).json({ message: 'Khong tim thay cong viec hoac ban khong co quyen cap nhat.' });
       }
@@ -178,6 +190,48 @@ module.exports = function createTaskRouter(auth) {
       tasks.splice(index, 1);
       saveTasks(tasks);
       return res.json({ message: 'Xóa công việc thành công.' });
+    } catch (error) { return error500(res, error); }
+  });
+
+  // C1_TASK_ASSIGNMENT: email lookup and multi-user assignment.
+  router.get('/members/search', auth, (req, res) => {
+    try {
+      const email = String(req.query.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+        return res.status(400).json({ message: 'Nhap email day du va hop le.' });
+      const user = readMembers().find(u => u.id !== req.user.id && String(u.email || '').toLowerCase() === email);
+      if (!user) return res.status(404).json({ message: 'Khong tim thay tai khoan voi email nay.' });
+      return res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    } catch (error) { return error500(res, error); }
+  });
+  router.get('/:id/assignees', auth, (req, res) => {
+    try {
+      const task = ownTask(req, res); if (!task) return;
+      const users = readMembers();
+      const ids = Array.isArray(task.assigneeIds) ? task.assigneeIds : [];
+      const assignees = ids.map(id => users.find(u => u.id === id)).filter(Boolean)
+        .map(u => ({id:u.id,name:u.name,email:u.email}));
+      return res.json({ assignees, primaryAssigneeId: task.primaryAssigneeId || null });
+    } catch (error) { return error500(res, error); }
+  });
+  router.put('/:id/assignees', auth, (req, res) => {
+    try {
+      const tasks = readTasks();
+      const index = tasks.findIndex(t => t.id === req.params.id && t.createdBy === req.user.id);
+      if (index < 0) return res.status(403).json({ message:'Chi nguoi tao duoc giao viec.' });
+      const ids = req.body?.userIds;
+      if (!Array.isArray(ids) || ids.length > 30 || ids.some(id => typeof id !== 'string' || !id))
+        return res.status(400).json({ message:'Danh sach nguoi duoc giao khong hop le (toi da 30).' });
+      if (new Set(ids).size !== ids.length) return res.status(400).json({ message:'Nguoi duoc giao bi trung.' });
+      if (ids.includes(req.user.id)) return res.status(400).json({ message:'Nguoi tao khong can tu giao viec cho minh.' });
+      const users = readMembers();
+      if (ids.some(id => !users.some(u => u.id === id))) return res.status(400).json({ message:'Co tai khoan khong ton tai.' });
+      const task = tasks[index];
+      task.assigneeIds = ids;
+      if (task.primaryAssigneeId && !ids.includes(task.primaryAssigneeId)) task.primaryAssigneeId = null;
+      task.updatedAt = new Date().toISOString();
+      saveTasks(tasks);
+      return res.json({ message:'Giao viec thanh cong.', task });
     } catch (error) { return error500(res, error); }
   });
 
