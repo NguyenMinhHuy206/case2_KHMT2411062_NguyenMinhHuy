@@ -11,3 +11,9 @@ api/users.json
 /api/users.json.tmp
 /api/.env
 TaskManager/lib/*.bak
+/api/tasks.json
+/api/tasks.json.tmp
+/backup_*/
+*.bak
+/index_backend_kiemtra.txt
+/main_flutter_kiemtra.txt
