@@ -695,6 +695,8 @@ class _TaskListScreenState extends State<TaskListScreen> {
   final TextEditingController _search = TextEditingController();
   String _statusFilter = 'all';
   String _priorityFilter = 'all';
+  // B7_SORT_V1: sort filtered tasks, keeping missing due dates last.
+  String _sortMode = 'created_newest';
   @override
   void dispose() {
     _search.dispose();
@@ -702,13 +704,65 @@ class _TaskListScreenState extends State<TaskListScreen> {
   }
   List<Map<String, dynamic>> get _visibleTasks {
     final keyword = _search.text.trim().toLowerCase();
-    return _tasks.where((task) {
+    final items = _tasks.where((task) {
       final title = (task['title'] ?? '').toString().toLowerCase();
       final matchesTitle = keyword.isEmpty || title.contains(keyword);
       final matchesStatus = _statusFilter == 'all' || task['status'] == _statusFilter;
       final matchesPriority = _priorityFilter == 'all' || task['priority'] == _priorityFilter;
       return matchesTitle && matchesStatus && matchesPriority;
     }).toList();
+
+    int priorityScore(dynamic p) {
+      switch (p?.toString()) {
+        case 'high': return 3;
+        case 'medium': return 2;
+        case 'low': return 1;
+        default: return 0;
+      }
+    }
+    DateTime? parsed(dynamic value) {
+      final s = value?.toString().trim() ?? '';
+      return s.isEmpty ? null : DateTime.tryParse(s);
+    }
+    int compareDate(dynamic a, dynamic b, {required bool ascending, bool missingLast = false}) {
+      final da = parsed(a), db = parsed(b);
+      if (missingLast) {
+        if (da == null && db != null) return 1;
+        if (da != null && db == null) return -1;
+      }
+      if (da == null && db == null) return 0;
+      if (da == null) return ascending ? -1 : 1;
+      if (db == null) return ascending ? 1 : -1;
+      return ascending ? da.compareTo(db) : db.compareTo(da);
+    }
+    items.sort((a, b) {
+      int result;
+      switch (_sortMode) {
+        case 'due_asc':
+          result = compareDate(a['dueDate'], b['dueDate'], ascending: true, missingLast: true);
+          break;
+        case 'due_desc':
+          result = compareDate(a['dueDate'], b['dueDate'], ascending: false, missingLast: true);
+          break;
+        case 'priority_high':
+          result = priorityScore(b['priority']).compareTo(priorityScore(a['priority']));
+          break;
+        case 'priority_low':
+          result = priorityScore(a['priority']).compareTo(priorityScore(b['priority']));
+          break;
+        case 'created_oldest':
+          result = compareDate(a['createdAt'], b['createdAt'], ascending: true);
+          break;
+        case 'created_newest':
+        default:
+          result = compareDate(a['createdAt'], b['createdAt'], ascending: false);
+          break;
+      }
+      if (result != 0) return result;
+      // Consistent tie order across refreshes.
+      return (a['id'] ?? '').toString().compareTo((b['id'] ?? '').toString());
+    });
+    return items;
   }
 
   @override
@@ -869,7 +923,29 @@ class _TaskListScreenState extends State<TaskListScreen> {
                          onChanged: (v) { if(v != null) setState(() => _priorityFilter = v); },
                        ),
                        const SizedBox(height: 8),
-                       const Text('Người phụ trách: sẽ bổ sung khi hoàn thành phần C.',
+                                 // B7_SORT_V1: ordering applies after B6 search and filters.
+          DropdownButtonFormField<String>(
+            key: ValueKey('B7_$_sortMode'),
+            initialValue: _sortMode,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'B7 - Sắp xếp công việc',
+              prefixIcon: Icon(Icons.sort),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'due_asc', child: Text('Hạn hoàn thành: gần nhất')),
+              DropdownMenuItem(value: 'due_desc', child: Text('Hạn hoàn thành: xa nhất')),
+              DropdownMenuItem(value: 'priority_high', child: Text('Ưu tiên: Cao → Thấp')),
+              DropdownMenuItem(value: 'priority_low', child: Text('Ưu tiên: Thấp → Cao')),
+              DropdownMenuItem(value: 'created_newest', child: Text('Thời gian tạo: mới nhất')),
+              DropdownMenuItem(value: 'created_oldest', child: Text('Thời gian tạo: cũ nhất')),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _sortMode = value);
+            },
+          ),
+          const SizedBox(height: 12),
+const Text('Người phụ trách: sẽ bổ sung khi hoàn thành phần C.',
                            style: TextStyle(color: Colors.black54, fontSize: 12)),
                        const SizedBox(height: 8),
                        OutlinedButton.icon(
@@ -877,6 +953,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
                            _search.clear();
                            _statusFilter = 'all';
                            _priorityFilter = 'all';
+          _sortMode = 'created_newest';
                          }),
                          icon: const Icon(Icons.filter_alt_off_outlined),
                          label: const Text('Xóa bộ lọc'),
