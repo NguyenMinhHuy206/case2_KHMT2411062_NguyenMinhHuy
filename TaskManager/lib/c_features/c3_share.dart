@@ -2,7 +2,7 @@ part of '../main.dart';
 
 // C3 - Chia se cong viec theo email.
 // Chi nguoi tao cong viec duoc chia se.
-// Nguoi nhan duoc cap quyen viewer.
+// Viewer/Editor duoc cap theo C4; C6 cho phep doi va thu hoi quyen.
 class C3ShareScreen extends StatefulWidget {
   final String taskId;
   final bool canManage;
@@ -148,6 +148,110 @@ class _C3ShareScreenState extends State<C3ShareScreen> {
       if (mounted) {
         setState(() => _saving = false);
       }
+    }
+  }
+
+  // C6: Only the task creator may change an existing share.
+  Future<void> _changePermission(Map<String, dynamic> share) async {
+    if (!_canShare || _saving || _loading) return;
+    final shareId = (share['id'] ?? '').toString();
+    final current = (share['permission'] ?? 'viewer').toString();
+    if (shareId.isEmpty) return;
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text('Đổi quyền: ${_personName(share)}'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'viewer'),
+            child: Row(
+              children: [
+                Icon(current == 'viewer' ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Viewer - Chỉ xem')),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'editor'),
+            child: Row(
+              children: [
+                Icon(current == 'editor' ? Icons.radio_button_checked : Icons.radio_button_unchecked),
+                const SizedBox(width: 12),
+                const Expanded(child: Text('Editor - Được chỉnh sửa')),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || selected == null || selected == current) return;
+
+    setState(() => _saving = true);
+    try {
+      await Api.request(
+        'PATCH',
+        '/api/tasks/${widget.taskId}/shares/$shareId',
+        {'permission': selected},
+      );
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã cập nhật quyền chia sẻ.')),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  // C6: Revoke share with explicit confirmation. Assignment C1 is preserved.
+  Future<void> _revokeShare(Map<String, dynamic> share) async {
+    if (!_canShare || _saving || _loading) return;
+    final shareId = (share['id'] ?? '').toString();
+    if (shareId.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Thu hồi quyền chia sẻ?'),
+        content: Text(
+          'Bạn muốn thu hồi quyền chia sẻ của ${_personName(share)}? '
+          'Nếu tài khoản này còn được giao công việc, quyền được giao vẫn được giữ.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Thu hồi'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() => _saving = true);
+    try {
+      await Api.request(
+        'DELETE',
+        '/api/tasks/${widget.taskId}/shares/$shareId',
+      );
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thu hồi quyền chia sẻ.')),
+      );
+    } catch (error) {
+      if (mounted) showError(context, error);
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -333,12 +437,48 @@ class _C3ShareScreenState extends State<C3ShareScreen> {
                             (share['email'] ?? '')
                                 .toString(),
                           ),
-                          trailing: Chip(
-                            label: Text(
-                              (share['permission'] ?? '').toString() == 'editor'
-                                  ? 'Editor'
-                                  : 'Viewer',
-                            ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Chip(
+                                label: Text(
+                                  (share['permission'] ?? '').toString() == 'editor'
+                                      ? 'Editor'
+                                      : 'Viewer',
+                                ),
+                              ),
+                              if (_canShare)
+                                PopupMenuButton<String>(
+                                  tooltip: 'C6 - Quản lý quyền',
+                                  enabled: !_saving,
+                                  icon: const Icon(Icons.more_vert),
+                                  onSelected: (action) {
+                                    if (action == 'change') {
+                                      _changePermission(share);
+                                    } else if (action == 'revoke') {
+                                      _revokeShare(share);
+                                    }
+                                  },
+                                  itemBuilder: (context) => const [
+                                    PopupMenuItem(
+                                      value: 'change',
+                                      child: ListTile(
+                                        leading: Icon(Icons.manage_accounts_outlined),
+                                        title: Text('Đổi quyền Viewer / Editor'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'revoke',
+                                      child: ListTile(
+                                        leading: Icon(Icons.person_remove_outlined, color: Colors.red),
+                                        title: Text('Thu hồi quyền chia sẻ'),
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
                           ),
                         ),
                       ),

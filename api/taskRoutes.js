@@ -445,6 +445,65 @@ module.exports = function createTaskRouter(auth) {
     }
   });
 
+  // C6: Only the task creator can change or revoke an existing share.
+  // Using taskId in the update filter prevents editing a share of another task.
+  router.patch('/:id/shares/:shareId', auth, async (req, res) => {
+    try {
+      const task = await Task.findOne({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      }).lean();
+      if (!task) {
+        return res.status(403).json({ message: 'Chỉ người tạo công việc được thay đổi quyền chia sẻ.' });
+      }
+
+      if (!mongoose.isValidObjectId(req.params.shareId)) {
+        return res.status(404).json({ message: 'Không tìm thấy quyền chia sẻ.' });
+      }
+      const permission = req.body?.permission;
+      if (!['viewer', 'editor'].includes(permission)) {
+        return res.status(400).json({ message: 'Quyền phải là viewer hoặc editor.' });
+      }
+
+      const share = await TaskShare.findOneAndUpdate(
+        { _id: req.params.shareId, taskId: task._id },
+        { $set: { permission } },
+        { new: true, runValidators: true }
+      ).lean();
+      if (!share) {
+        return res.status(404).json({ message: 'Không tìm thấy quyền chia sẻ trong công việc này.' });
+      }
+      return res.json({
+        message: 'Đã cập nhật quyền chia sẻ.',
+        share: { id: String(share._id), permission: share.permission }
+      });
+    } catch (error) { return error500(res, error); }
+  });
+
+  // C6: Revoke the share only; an assignment from C1 remains unaffected.
+  router.delete('/:id/shares/:shareId', auth, async (req, res) => {
+    try {
+      const task = await Task.findOne({
+        ...idFilter(req.params.id), createdBy: req.user._id
+      }).lean();
+      if (!task) {
+        return res.status(403).json({ message: 'Chỉ người tạo công việc được thu hồi quyền chia sẻ.' });
+      }
+      if (!mongoose.isValidObjectId(req.params.shareId)) {
+        return res.status(404).json({ message: 'Không tìm thấy quyền chia sẻ.' });
+      }
+      const share = await TaskShare.findOneAndDelete({
+        _id: req.params.shareId, taskId: task._id
+      }).lean();
+      if (!share) {
+        return res.status(404).json({ message: 'Không tìm thấy quyền chia sẻ trong công việc này.' });
+      }
+      return res.json({
+        message: 'Đã thu hồi quyền chia sẻ.',
+        revokedShareId: String(share._id)
+      });
+    } catch (error) { return error500(res, error); }
+  });
+
   // C2: Set or clear the primary assignee.
   // Only the task creator can perform this action.
   router.patch('/:id/primary-assignee', auth, async (req, res) => {
