@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 part 'c_features/c1_assign.dart';
 part 'c_features/c2_primary.dart';
+part 'c_features/c3_share.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -1651,6 +1652,30 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                label: Text(_canManage
                    ? 'C2 - Chỉ định người phụ trách chính'
                    : 'C2 - Xem người phụ trách chính'),
+             ),
+             const SizedBox(height: 10),
+                         OutlinedButton.icon(
+               onPressed: _deleting ? null : () async {
+                 await Navigator.push<void>(
+                   context,
+                   MaterialPageRoute(
+                     builder: (_) => C3ShareScreen(
+                       taskId: widget.taskId,
+                       canManage: _canManage,
+                     ),
+                   ),
+                 );
+
+                 if (mounted) {
+                   await _load();
+                 }
+               },
+               icon: const Icon(Icons.share_outlined),
+               label: Text(
+                 _canManage
+                     ? 'C3 - Chia sẻ công việc theo email'
+                     : 'C3 - Xem danh sách chia sẻ',
+               ),
              ),
              const SizedBox(height: 10),
             if (_canManage) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _edit,
