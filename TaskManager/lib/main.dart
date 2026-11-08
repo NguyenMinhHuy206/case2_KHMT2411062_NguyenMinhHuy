@@ -7,6 +7,7 @@ part 'c_features/c1_assign.dart';
 part 'c_features/c2_primary.dart';
 part 'c_features/c3_share.dart';
 part 'c_features/c5_members.dart';
+part 'c_features/c7_progress.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -671,6 +672,13 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 4),
             actionTile('Danh sách công việc', 'Xem, tìm kiếm và lọc công việc',
               Icons.view_list_rounded, const Color(0xFF3867D6), openTasks),
+            actionTile('Tiến độ theo vai trò', 'Theo dõi việc tạo, được giao và được chia sẻ',
+              Icons.insights_outlined, const Color(0xFF4B72B8), () async {
+                await Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => const C7ProgressScreen(),
+                ));
+                if (mounted) await reloadStats();
+              }),
             actionTile('Tạo công việc mới', 'Thêm công việc vào hệ thống',
               Icons.add_task_rounded, const Color(0xFF27A879), openCreate),
             actionTile('Thông tin cá nhân', 'Xem và cập nhật hồ sơ',

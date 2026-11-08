@@ -140,6 +140,36 @@ module.exports = function createTaskRouter(auth) {
     return toClientTask(plain, users);
   }
 
+
+  // C7: Progress and scope overview; one authenticated response for all roles.
+  // A task may belong to several scopes, but it is counted once in the overall total.
+  router.get('/progress', auth, async (req, res) => {
+    try {
+      const shares = await TaskShare.find({ userId: req.user._id })
+        .select('taskId permission')
+        .lean();
+      const sharedTaskIds = shares.map(share => share.taskId);
+      const tasks = await Task.find({
+        $or: [
+          { createdBy: req.user._id },
+          { assigneeIds: req.user._id },
+          { _id: { $in: sharedTaskIds } }
+        ]
+      }).sort({ createdAt: -1 }).lean();
+      const users = await userDictionary(tasks);
+      const { buildC7Progress } = require('./c7Progress');
+      const result = buildC7Progress({
+        tasks,
+        shares,
+        userId: req.user._id,
+        serializeTask: task => toClientTask(task, users)
+      });
+      return res.json(result);
+    } catch (error) {
+      return error500(res, error);
+    }
+  });
+
   // B1: Danh sach cong viec do nguoi dung tao hoac duoc giao.
   router.get('/', auth, async (req, res) => {
     try {
@@ -153,7 +183,23 @@ module.exports = function createTaskRouter(auth) {
         ]
       }).sort({ createdAt: -1 }).lean();
       const users = await userDictionary(tasks);
-      return res.json({ total: tasks.length, tasks: tasks.map(t => toClientTask(t, users)) });
+      // B6: Return display names only for assignees on tasks this user can access.
+      const assigneeMongoIds = [...new Set(tasks.flatMap(task =>
+        [...(task.assigneeIds || []), task.primaryAssigneeId]
+          .filter(Boolean).map(id => String(id))
+      ))];
+      const assigneeUsers = assigneeMongoIds.length
+        ? await User.find({ _id: { $in: assigneeMongoIds } })
+            .select('fullName email legacyId').lean()
+        : [];
+      const assigneeOptions = assigneeUsers.map(user => ({
+        id: publicUserId(user), name: user.fullName, email: user.email
+      })).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      return res.json({
+        total: tasks.length,
+        tasks: tasks.map(t => toClientTask(t, users)),
+        assigneeOptions
+      });
     } catch (error) { return error500(res, error); }
   });
 
