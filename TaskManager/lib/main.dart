@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 part 'c_features/c1_assign.dart';
+part 'c_features/c2_primary.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -1628,6 +1629,30 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                icon: const Icon(Icons.group_add_outlined),
                label: const Text('C1 - Giao việc theo email')),
              if (_canManage) const SizedBox(height: 10),
+             OutlinedButton.icon(
+               onPressed: _deleting ? null : () async {
+                 final changed = await Navigator.push<bool>(
+                   context,
+                   MaterialPageRoute(builder: (_) => C2PrimaryScreen(
+                     taskId: widget.taskId,
+                     canManage: _canManage,
+                   )),
+                 );
+                 if (changed == true && mounted) {
+                   await _load();
+                   if (context.mounted) {
+                     ScaffoldMessenger.of(context).showSnackBar(
+                       const SnackBar(content: Text('Đã cập nhật người phụ trách chính.')),
+                     );
+                   }
+                 }
+               },
+               icon: const Icon(Icons.verified_user_outlined),
+               label: Text(_canManage
+                   ? 'C2 - Chỉ định người phụ trách chính'
+                   : 'C2 - Xem người phụ trách chính'),
+             ),
+             const SizedBox(height: 10),
             if (_canManage) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _edit,
               icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
             const SizedBox(height: 10),

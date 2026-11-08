@@ -320,5 +320,65 @@ module.exports = function createTaskRouter(auth) {
     } catch (error) { return error500(res, error); }
   });
 
+  // C2: Set or clear the primary assignee.
+  // Only the task creator can perform this action.
+  router.patch('/:id/primary-assignee', auth, async (req, res) => {
+    try {
+      const body = req.body || {};
+
+      if (!Object.prototype.hasOwnProperty.call(body, 'userId')) {
+        return res.status(400).json({
+          message: 'userId is required.'
+        });
+      }
+
+      const task = await Task.findOne({
+        ...idFilter(req.params.id),
+        createdBy: req.user._id
+      });
+
+      if (!task) {
+        return res.status(403).json({
+          message: 'Only the task creator can set the primary assignee.'
+        });
+      }
+
+      if (body.userId === null) {
+        task.primaryAssigneeId = null;
+      } else {
+        if (typeof body.userId !== 'string' || !body.userId.trim()) {
+          return res.status(400).json({
+            message: 'Invalid userId.'
+          });
+        }
+
+        const assignees = await User.find({
+          _id: { $in: task.assigneeIds || [] }
+        }).lean();
+
+        const selected = assignees.find(user =>
+          publicUserId(user) === body.userId.trim() ||
+          String(user._id) === body.userId.trim()
+        );
+
+        if (!selected) {
+          return res.status(400).json({
+            message: 'Primary assignee must be an assigned member.'
+          });
+        }
+
+        task.primaryAssigneeId = selected._id;
+      }
+
+      await task.save();
+
+      return res.json({
+        message: 'Primary assignee updated successfully.',
+        task: await clientTask(task)
+      });
+    } catch (error) {
+      return error500(res, error);
+    }
+  });
   return router;
 };
