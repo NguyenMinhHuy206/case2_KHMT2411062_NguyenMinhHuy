@@ -80,6 +80,22 @@ module.exports = function createTaskRouter(auth) {
     return Boolean(await TaskShare.exists({ taskId: task._id, userId }));
   }
 
+  // C4: Nguoi tao hoac nguoi duoc chia se quyen editor duoc sua noi dung.
+  // Nguoi chi co quyen viewer khong duoc phep ghi du lieu.
+  async function canEditTask(task, userId) {
+    if (canManageTask(task, userId)) return true;
+    return Boolean(await TaskShare.exists({
+      taskId: task._id,
+      userId,
+      permission: 'editor'
+    }));
+  }
+
+  // Giu quyen B3 cua nguoi duoc giao C1, va bo sung quyen cho editor C4.
+  async function canChangeTaskStatus(task, userId) {
+    return canReadTask(task, userId) || (await canEditTask(task, userId));
+  }
+
   async function taskForRequest(id, userId) {
     const task = await Task.findOne(idFilter(id)).lean();
     if (!task || !(await canReadTaskIncludingShare(task, userId))) return null;
@@ -162,21 +178,26 @@ module.exports = function createTaskRouter(auth) {
     try {
       const task = await taskForRequest(req.params.id, req.user._id);
       if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền truy cập.' });
+      const canManage = canManageTask(task, req.user._id);
+      const canEdit = await canEditTask(task, req.user._id);
       return res.json({
         task: await clientTask(task),
-        canManage: canManageTask(task, req.user._id),
-        canChangeStatus: canReadTask(task, req.user._id)
+        canManage,
+        canEdit,
+        canEditPriority: canEdit,
+        canEditDates: canEdit,
+        canChangeStatus: canReadTask(task, req.user._id) || canEdit
       });
     } catch (error) { return error500(res, error); }
   });
 
-  // B2: Sua noi dung; chi nguoi tao duoc phep.
+  // B2 + C4: Nguoi tao hoac editor duoc sua noi dung; viewer khong duoc sua.
   router.put('/:id', auth, async (req, res) => {
     try {
-      const task = await Task.findOne({
-        ...idFilter(req.params.id), createdBy: req.user._id
-      });
-      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền chỉnh sửa.' });
+      const task = await Task.findOne(idFilter(req.params.id));
+      if (!task || !(await canEditTask(task, req.user._id))) {
+        return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền chỉnh sửa.' });
+      }
       const check = validateFields({
         title: task.title, description: task.description, status: task.status === 'todo' ? 'pending' : task.status,
         priority: task.priority, startDate: dateOnly(task.startDate), dueDate: dateOnly(task.dueDate),
@@ -200,33 +221,34 @@ module.exports = function createTaskRouter(auth) {
       if (!['pending', 'in_progress', 'completed'].includes(status)) {
         return res.status(400).json({ message: 'Trạng thái không hợp lệ.' });
       }
-      const task = await Task.findOneAndUpdate({
-        $and: [
-          idFilter(req.params.id),
-          { $or: [{ createdBy: req.user._id }, { assigneeIds: req.user._id }] }
-        ]
-      }, { $set: { status } }, { new: true, runValidators: true });
-      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      const task = await Task.findOne(idFilter(req.params.id));
+      if (!task || !(await canChangeTaskStatus(task, req.user._id))) {
+        return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      }
+      task.status = status;
+      await task.save();
       return res.json({ message: 'Cập nhật trạng thái thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B4: Chi nguoi tao duoc cap nhat uu tien.
+  // B4 + C4: Nguoi tao hoac editor duoc cap nhat uu tien.
   router.patch('/:id/priority', auth, async (req, res) => {
     try {
       const priority = req.body?.priority;
       if (!['low', 'medium', 'high'].includes(priority)) {
         return res.status(400).json({ message: 'Mức độ ưu tiên không hợp lệ.' });
       }
-      const task = await Task.findOneAndUpdate({
-        ...idFilter(req.params.id), createdBy: req.user._id
-      }, { $set: { priority } }, { new: true, runValidators: true });
-      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      const task = await Task.findOne(idFilter(req.params.id));
+      if (!task || !(await canEditTask(task, req.user._id))) {
+        return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      }
+      task.priority = priority;
+      await task.save();
       return res.json({ message: 'Cập nhật mức độ ưu tiên thành công.', task: await clientTask(task) });
     } catch (error) { return error500(res, error); }
   });
 
-  // B5: Chi nguoi tao duoc sua ngay bat dau / han hoan thanh.
+  // B5 + C4: Nguoi tao hoac editor duoc sua ngay bat dau / han hoan thanh.
   router.patch('/:id/dates', auth, async (req, res) => {
     try {
       const body = req.body || {};
@@ -234,10 +256,10 @@ module.exports = function createTaskRouter(auth) {
           !Object.prototype.hasOwnProperty.call(body, 'dueDate')) {
         return res.status(400).json({ message: 'Cần gửi startDate và dueDate (YYYY-MM-DD hoặc null).' });
       }
-      const task = await Task.findOne({
-        ...idFilter(req.params.id), createdBy: req.user._id
-      });
-      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      const task = await Task.findOne(idFilter(req.params.id));
+      if (!task || !(await canEditTask(task, req.user._id))) {
+        return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
+      }
       const check = validateFields({
         title: task.title, description: task.description,
         status: task.status === 'todo' ? 'pending' : task.status, priority: task.priority,
@@ -363,8 +385,8 @@ module.exports = function createTaskRouter(auth) {
     } catch (error) { return error500(res, error); }
   });
 
-  // C3: Chu cong viec chia se theo email. C3 chi cap quyen xem (viewer).
-  // C4 se bo sung quyen editor va chinh sach cap nhat noi dung.
+  // C3 + C4: Chu cong viec chia se theo email voi quyen viewer hoac editor.
+  // Neu Flutter C3 cu khong gui permission, mac dinh viewer de tuong thich.
   router.post('/:id/shares', auth, async (req, res) => {
     try {
       const task = await Task.findOne({
@@ -379,6 +401,10 @@ module.exports = function createTaskRouter(auth) {
         : '';
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
         return res.status(400).json({ message: 'Email chia se khong hop le.' });
+      }
+      const permission = req.body?.permission === undefined ? 'viewer' : req.body.permission;
+      if (!['viewer', 'editor'].includes(permission)) {
+        return res.status(400).json({ message: 'Quyen chia se phai la viewer hoac editor.' });
       }
 
       const recipient = await User.findOne({ email }).lean();
@@ -398,7 +424,7 @@ module.exports = function createTaskRouter(auth) {
         taskId: task._id,
         userId: recipient._id,
         sharedBy: req.user._id,
-        permission: 'viewer'
+        permission
       });
       return res.status(201).json({
         message: 'Chia se cong viec thanh cong.',

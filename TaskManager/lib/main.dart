@@ -1323,6 +1323,9 @@ class TaskDetailScreen extends StatefulWidget {
 class _TaskDetailScreenState extends State<TaskDetailScreen> {
   Map<String, dynamic>? _task;
   bool _canManage = false;
+  bool _canEdit = false;
+  bool _canEditPriority = false;
+  bool _canEditDates = false;
   bool _canChangeStatus = false;
   String? _error;
   bool _loading = true;
@@ -1339,7 +1342,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     try {
       final response = await Api.request('GET', '/api/tasks/${widget.taskId}');
       if (!mounted) return;
-      setState(() { _task = Map<String, dynamic>.from(response['task'] as Map); _canManage = response['canManage'] == true; _canChangeStatus = response['canChangeStatus'] == true; _loading = false; });
+      final taskData = response['task'];
+      if (taskData is! Map) {
+        throw Exception('Máy chủ không trả về dữ liệu công việc hợp lệ.');
+      }
+      setState(() {
+        _task = Map<String, dynamic>.from(taskData);
+        _canManage = response['canManage'] == true;
+        _canEdit = response['canEdit'] == true || _canManage;
+        _canEditPriority = response['canEditPriority'] == true || _canManage;
+        _canEditDates = response['canEditDates'] == true || _canManage;
+        _canChangeStatus = response['canChangeStatus'] == true || _canManage;
+        _loading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString().replaceFirst('Exception: ', ''); _loading = false; });
@@ -1371,7 +1386,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   // B3: Thay doi trang thai ngay tai man hinh chi tiet, khong can sua toan bo form.
   Future<void> _changeStatus(String nextStatus) async {
-    if (_task == null || _updatingStatus || _updatingPriority || _deleting) return;
+    if (_task == null || !_canChangeStatus || _updatingStatus || _updatingPriority || _deleting) return;
     if (nextStatus == (_task!['status'] ?? '').toString()) return;
     setState(() => _updatingStatus = true);
     try {
@@ -1392,7 +1407,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
   // B4: Cap nhat muc do uu tien ngay tai man hinh chi tiet.
   Future<void> _changePriority(String nextPriority) async {
-    if (_task == null || _updatingPriority || _updatingStatus || _deleting) return;
+    if (_task == null || !_canEditPriority || _updatingPriority || _updatingStatus || _deleting) return;
     if (nextPriority == (_task!['priority'] ?? '').toString()) return;
     setState(() => _updatingPriority = true);
     try {
@@ -1418,7 +1433,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     return '${date.year}-${pad(date.month)}-${pad(date.day)}';
   }
   Future<void> _changeDates() async {
-    if (_task == null || _updatingDates || _updatingPriority || _updatingStatus || _deleting) { return; }
+    if (_task == null || !_canEditDates || _updatingDates || _updatingPriority || _updatingStatus || _deleting) { return; }
     DateTime? start = DateTime.tryParse((_task!['startDate'] ?? '').toString());
     DateTime? due = DateTime.tryParse((_task!['dueDate'] ?? '').toString());
     final confirmed = await showDialog<bool>(
@@ -1497,7 +1512,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
   }
   Future<void> _edit() async {
-    if (_task == null) return;
+    if (_task == null || !_canEdit) return;
     final changed = await Navigator.push<bool>(context, MaterialPageRoute(
       builder: (_) => EditTaskScreen(task: _task!),
     ));
@@ -1554,6 +1569,34 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
             Text((_task!['title'] ?? '').toString(),
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
+            Card(
+              child: ListTile(
+                leading: Icon(
+                  _canManage
+                      ? Icons.admin_panel_settings_outlined
+                      : _canEdit
+                          ? Icons.edit_note_outlined
+                          : _canChangeStatus
+                              ? Icons.assignment_ind_outlined
+                              : Icons.visibility_outlined,
+                ),
+                title: Text(_canManage
+                    ? 'Quyền: Người tạo'
+                    : _canEdit
+                        ? 'Quyền: Editor'
+                        : _canChangeStatus
+                            ? 'Quyền: Người được giao'
+                            : 'Quyền: Viewer'),
+                subtitle: Text(_canManage
+                    ? 'Bạn được chỉnh sửa, giao việc, chia sẻ và xóa công việc.'
+                    : _canEdit
+                        ? 'Bạn được chỉnh sửa, nhưng không được xóa hoặc quản lý chia sẻ.'
+                        : _canChangeStatus
+                            ? 'Bạn được cập nhật trạng thái; không được sửa nội dung.'
+                            : 'Bạn chỉ được xem nội dung công việc.'),
+              ),
+            ),
+            const SizedBox(height: 12),
             Card(child: Column(children: [
               _item('Mô tả', (_task!['description'] ?? '').toString().isEmpty ? 'Không có mô tả' : _task!['description'].toString(), Icons.notes),
               _item('Trạng thái', _status((_task!['status'] ?? '').toString()), Icons.track_changes),
@@ -1599,7 +1642,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                     DropdownMenuItem(value: 'medium', child: Text('Trung bình')),
                     DropdownMenuItem(value: 'high', child: Text('Cao')),
                   ],
-                  onChanged: (!_canManage || _updatingStatus || _updatingPriority || _deleting) ? null : (value) {
+                  onChanged: (!_canEditPriority || _updatingStatus || _updatingPriority || _deleting) ? null : (value) {
                     if (value != null) _changePriority(value);
                   },
                 ),
@@ -1613,7 +1656,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
                 child: OutlinedButton.icon(
-                  onPressed: (!_canManage || _updatingDates || _updatingStatus || _updatingPriority || _deleting) ? null : _changeDates,
+                  onPressed: (!_canEditDates || _updatingDates || _updatingStatus || _updatingPriority || _deleting) ? null : _changeDates,
                   icon: const Icon(Icons.edit_calendar_outlined),
                   label: Text(_updatingDates ? 'Đang lưu ngày...' : 'B5 - Chọn ngày bắt đầu và hạn hoàn thành'),
                 ),
@@ -1678,10 +1721,10 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                ),
              ),
              const SizedBox(height: 10),
-            if (_canManage) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _edit,
+            if (_canEdit) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority || _updatingDates) ? null : _edit,
               icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
-            const SizedBox(height: 10),
-            if (_canManage) OutlinedButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority) ? null : _delete,
+            if (_canManage) const SizedBox(height: 10),
+            if (_canManage) OutlinedButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority || _updatingDates) ? null : _delete,
               icon: const Icon(Icons.delete_outline),
               label: Text(_deleting ? 'Đang xóa...' : 'Xóa công việc'),
               style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700)),

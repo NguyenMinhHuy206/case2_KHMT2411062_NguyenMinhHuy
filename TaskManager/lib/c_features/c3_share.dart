@@ -19,6 +19,7 @@ class C3ShareScreen extends StatefulWidget {
 
 class _C3ShareScreenState extends State<C3ShareScreen> {
   final TextEditingController _email = TextEditingController();
+  String _newPermission = 'viewer';
 
   List<Map<String, dynamic>> _shares = [];
   bool _loading = true;
@@ -121,7 +122,7 @@ class _C3ShareScreenState extends State<C3ShareScreen> {
       await Api.request(
         'POST',
         '/api/tasks/${widget.taskId}/shares',
-        {'email': email},
+        {'email': email, 'permission': _newPermission},
       );
 
       if (!mounted) return;
@@ -245,6 +246,32 @@ class _C3ShareScreenState extends State<C3ShareScreen> {
                         },
                       ),
                       const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('c4_share_permission_$_newPermission'),
+                        initialValue: _newPermission,
+                        decoration: const InputDecoration(
+                          labelText: 'C4 - Quyền truy cập',
+                          prefixIcon: Icon(Icons.security_outlined),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'viewer',
+                            child: Text('Viewer - Chỉ xem'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'editor',
+                            child: Text('Editor - Được chỉnh sửa'),
+                          ),
+                        ],
+                        onChanged: _saving
+                            ? null
+                            : (value) {
+                                if (value != null) {
+                                  setState(() => _newPermission = value);
+                                }
+                              },
+                      ),
+                      const SizedBox(height: 12),
                       FilledButton.icon(
                         onPressed: _saving ? null : _share,
                         icon: const Icon(
@@ -258,8 +285,8 @@ class _C3ShareScreenState extends State<C3ShareScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'C3 chỉ cấp quyền xem (viewer). '
-                        'Quyền chỉnh sửa sẽ được triển khai ở C4.',
+                        'Viewer: chỉ xem. Editor: được chỉnh sửa công việc, '
+                        'nhưng không được xóa, giao việc hay quản lý chia sẻ.',
                       ),
                       const SizedBox(height: 22),
                     ] else ...[
@@ -306,8 +333,12 @@ class _C3ShareScreenState extends State<C3ShareScreen> {
                             (share['email'] ?? '')
                                 .toString(),
                           ),
-                          trailing: const Chip(
-                            label: Text('Viewer'),
+                          trailing: Chip(
+                            label: Text(
+                              (share['permission'] ?? '').toString() == 'editor'
+                                  ? 'Editor'
+                                  : 'Viewer',
+                            ),
                           ),
                         ),
                       ),
