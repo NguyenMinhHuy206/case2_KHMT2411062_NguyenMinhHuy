@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 part 'c_features/c1_assign.dart';
 part 'c_features/c2_primary.dart';
 part 'c_features/c3_share.dart';
+part 'c_features/c5_members.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -1719,6 +1720,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                      ? 'C3 - Chia sẻ công việc theo email'
                      : 'C3 - Xem danh sách chia sẻ',
                ),
+             ),
+             const SizedBox(height: 10),
+             OutlinedButton.icon(
+               onPressed: _deleting ? null : () async {
+                 await Navigator.push<void>(
+                   context,
+                   MaterialPageRoute(
+                     builder: (_) => C5MembersScreen(taskId: widget.taskId),
+                   ),
+                 );
+               },
+               icon: const Icon(Icons.groups_outlined),
+               label: const Text('C5 - Danh sách người được giao và chia sẻ'),
              ),
              const SizedBox(height: 10),
             if (_canEdit) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority || _updatingDates) ? null : _edit,
