@@ -1742,6 +1742,23 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                icon: const Icon(Icons.groups_outlined),
                label: const Text('C5 - Danh sách người được giao và chia sẻ'),
              ),
+             // D6: Chỉ người tạo công việc xem được lịch sử gửi email.
+             if (_canManage) const SizedBox(height: 10),
+             if (_canManage) OutlinedButton.icon(
+               onPressed: _deleting ? null : () {
+                 Navigator.push<void>(
+                   context,
+                   MaterialPageRoute(
+                     builder: (_) => D6EmailLogsScreen(
+                       taskId: widget.taskId,
+                       taskTitle: (_task!['title'] ?? '').toString(),
+                     ),
+                   ),
+                 );
+               },
+               icon: const Icon(Icons.mark_email_read_outlined),
+               label: const Text('D6 - Lịch sử gửi email'),
+             ),
              const SizedBox(height: 10),
             if (_canEdit) FilledButton.icon(onPressed: (_deleting || _updatingStatus || _updatingPriority || _updatingDates) ? null : _edit,
               icon: const Icon(Icons.edit_outlined), label: const Text('Chỉnh sửa công việc')),
@@ -1752,6 +1769,217 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               style: OutlinedButton.styleFrom(foregroundColor: Colors.red.shade700)),
           ],
         )),
+  );
+}
+
+// D6 - Lich su gui email. Doc du lieu tu backend, khong tu luu email tren may.
+// Endpoint GET /api/tasks/:id/email-logs; backend kiem tra quyen nguoi tao.
+class D6EmailLogsScreen extends StatefulWidget {
+  final String taskId;
+  final String taskTitle;
+
+  const D6EmailLogsScreen({
+    super.key,
+    required this.taskId,
+    required this.taskTitle,
+  });
+
+  @override
+  State<D6EmailLogsScreen> createState() => _D6EmailLogsScreenState();
+}
+
+class _D6EmailLogsScreenState extends State<D6EmailLogsScreen> {
+  bool _loading = true;
+  String? _error;
+  int _total = 0;
+  List<Map<String, dynamic>> _logs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final response = await Api.request(
+        'GET', '/api/tasks/${widget.taskId}/email-logs',
+      );
+      final raw = response['logs'];
+      if (raw is! List) {
+        throw Exception('Dữ liệu lịch sử email không hợp lệ.');
+      }
+      final items = raw.whereType<Map>().map((entry) =>
+          Map<String, dynamic>.from(entry)).toList();
+      final count = response['total'];
+      if (!mounted) return;
+      setState(() {
+        _logs = items;
+        _total = count is num ? count.toInt() : items.length;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
+  }
+
+  String _value(Map<String, dynamic> log, List<String> keys,
+      {String fallback = 'Không có'}) {
+    for (final key in keys) {
+      final value = log[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty && text != 'null') return text;
+    }
+    return fallback;
+  }
+
+  String _time(dynamic value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return 'Chưa có';
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw;
+    final date = parsed.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(date.day)}/${two(date.month)}/${date.year} '
+        '${two(date.hour)}:${two(date.minute)}';
+  }
+
+  String _statusText(String status) => switch (status.toLowerCase()) {
+    'sent' => 'Đã gửi',
+    'pending' => 'Đang chờ',
+    'failed' => 'Gửi thất bại',
+    _ => status.isEmpty ? 'Không rõ' : status,
+  };
+
+  Color _statusColor(String status) => switch (status.toLowerCase()) {
+    'sent' => const Color(0xFF218B62),
+    'pending' => const Color(0xFFB57818),
+    'failed' => const Color(0xFFC43C48),
+    _ => const Color(0xFF5C6982),
+  };
+
+  Widget _logCard(Map<String, dynamic> log) {
+    final status = _value(log, ['status'], fallback: 'unknown');
+    final recipient = _value(log, [
+      'recipientEmail', 'toEmail', 'to', 'email', 'recipient',
+    ]);
+    final kind = _value(log, ['type', 'eventType', 'event', 'kind'],
+        fallback: 'Thông báo email');
+    final subject = _value(log, ['subject'], fallback: '');
+    final sentAt = _value(log, ['sentAt'], fallback: '');
+    final createdAt = _value(log, ['createdAt'], fallback: '');
+    final attempts = _value(log, ['attempts'], fallback: '');
+    final failure = _value(log, ['errorMessage', 'lastError', 'error'],
+        fallback: '');
+    final color = _statusColor(status);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Icon(Icons.mail_outline, color: Color(0xFF3867D6)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(kind, style: const TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 15,
+              ))),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(_statusText(status), style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w700, color: color,
+                )),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            Text('Người nhận: $recipient'),
+            if (subject.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Tiêu đề email: $subject'),
+            ],
+            const SizedBox(height: 6),
+            Text('Tạo lúc: ${_time(createdAt)}',
+                style: const TextStyle(color: Colors.black54)),
+            if (sentAt.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Gửi lúc: ${_time(sentAt)}',
+                  style: const TextStyle(color: Colors.black54)),
+            ],
+            if (attempts.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text('Số lần thử: $attempts',
+                  style: const TextStyle(color: Colors.black54)),
+            ],
+            if (status.toLowerCase() == 'failed' && failure.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('Lỗi gửi email: $failure',
+                  style: const TextStyle(color: Color(0xFFC43C48))),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('D6 - Lịch sử gửi email'),
+      actions: [
+        IconButton(
+          tooltip: 'Làm mới lịch sử email',
+          onPressed: _loading ? null : _load,
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ],
+    ),
+    body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.error_outline, size: 42, color: Colors.red),
+                  const SizedBox(height: 12),
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  FilledButton(onPressed: _load, child: const Text('Thử lại')),
+                ]),
+              ))
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  children: [
+                    Text(widget.taskTitle, style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700,
+                    )),
+                    const SizedBox(height: 8),
+                    Text('Tổng lịch sử: $_total email',
+                      style: const TextStyle(color: Colors.black54)),
+                    const SizedBox(height: 14),
+                    if (_logs.isEmpty)
+                      const Card(child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: Text('Chưa có lịch sử gửi email.')),
+                      )),
+                    for (final log in _logs) _logCard(log),
+                  ],
+                ),
+              ),
   );
 }
 

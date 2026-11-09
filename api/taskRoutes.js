@@ -635,5 +635,41 @@ module.exports = function createTaskRouter(auth) {
       return error500(res, error);
     }
   });
+  // D6: Read the email-delivery history for a task. Only its creator can
+  // inspect recipient addresses and delivery outcomes (server-side auth).
+  router.get('/:id/email-logs', auth, async (req, res) => {
+    try {
+      const task = await Task.findOne(idFilter(req.params.id))
+        .select('_id legacyId title createdBy').lean();
+      if (!task || !canManageTask(task, req.user._id)) {
+        return res.status(404).json({ message: 'KhÃ´ng tÃ¬m tháº¥y cÃ´ng viá»‡c hoáº·c báº¡n khÃ´ng cÃ³ quyá»n xem lá»‹ch sá»­ email.' });
+      }
+      const state = req.query?.status;
+      if (state !== undefined && !['pending', 'sent', 'failed'].includes(state)) {
+        return res.status(400).json({ message: 'Tráº¡ng thÃ¡i EmailLog khÃ´ng há»£p lá»‡.' });
+      }
+      const EmailLog = require('./models/EmailLog');
+      const filter = { taskId: task._id };
+      if (state) filter.status = state;
+      const rows = await EmailLog.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(100).lean();
+      return res.json({
+        taskId: publicTaskId(task),
+        total: rows.length,
+        logs: rows.map(entry => ({
+          id: String(entry._id),
+          recipientEmail: entry.recipientEmail,
+          eventType: entry.eventType,
+          subject: entry.subject,
+          status: entry.status,
+          attempts: entry.attempts,
+          errorMessage: entry.errorMessage ?? null,
+          sentAt: entry.sentAt ?? null,
+          createdAt: entry.createdAt,
+        }))
+      });
+    } catch (error) { return error500(res, error); }
+  });
   return router;
 };
