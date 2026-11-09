@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const Task = require('./models/Task');
 const TaskShare = require('./models/TaskShare');
+const { newAssignmentRecipients, notifyNewAssignees } = require('./d1Email');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
@@ -392,12 +393,18 @@ module.exports = function createTaskRouter(auth) {
       if (assignees.some(u => String(u._id) === String(req.user._id))) {
         return res.status(400).json({ message: 'Người tạo không cần tự giao việc cho mình.' });
       }
+      // D1: Only newly assigned users receive a task-assignment email.
+      // Saving exactly the same list must not trigger duplicate notifications.
+      const newlyAssigned = newAssignmentRecipients(task.assigneeIds || [], assignees);
       task.assigneeIds = assignees.map(u => u._id);
       if (task.primaryAssigneeId && !task.assigneeIds.some(id => String(id) === String(task.primaryAssigneeId))) {
         task.primaryAssigneeId = null;
       }
       await task.save();
-      return res.json({ message: 'Giao việc thành công.', task: await clientTask(task) });
+      // Assignment succeeds even if SMTP is not configured or sending fails.
+      // The email_logs collection records the truthful delivery state.
+      const emailNotification = await notifyNewAssignees(task, newlyAssigned);
+      return res.json({ message: 'Giao việc thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
 
