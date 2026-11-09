@@ -182,10 +182,12 @@ app.post('/logout', auth, async (req, res) => {
 });
 
 app.use('/api/tasks', require('./taskRoutes')(auth));
+const { startDueReminderScheduler } = require('./d5Reminder');
 
 // Chi mo cong sau khi MongoDB ket noi thanh cong.
 connectDatabase()
   .then(() => {
+    startDueReminderScheduler();
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running at http://localhost:${PORT} (MongoDB)`);
     });
