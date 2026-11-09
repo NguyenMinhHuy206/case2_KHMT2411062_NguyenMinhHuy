@@ -8,6 +8,7 @@ const TaskShare = require('./models/TaskShare');
 const { newAssignmentRecipients, notifyNewAssignees } = require('./d1Email');
 const { notifyNewShare } = require('./d2Email');
 const { snapshotImportantFields, notifyImportantTaskChanges } = require('./d3Email');
+const { notifyTaskCompleted } = require('./d4Email');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
@@ -253,6 +254,7 @@ module.exports = function createTaskRouter(auth) {
         ...(req.body || {})
       });
       if (check.error) return res.status(400).json({ message: check.error });
+      const beforeStatus = task.status;
       const beforeImportant = snapshotImportantFields(task);
       Object.assign(task, {
         title: check.fields.title, description: check.fields.description,
@@ -261,7 +263,8 @@ module.exports = function createTaskRouter(auth) {
       });
       await task.save();
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
-      return res.json({ message: 'Cập nhật công việc thành công.', task: await clientTask(task), emailNotification });
+      const completionNotification = await notifyTaskCompleted(task, beforeStatus, req.user._id);
+      return res.json({ message: 'Cập nhật công việc thành công.', task: await clientTask(task), emailNotification, completionNotification });
     } catch (error) { return error500(res, error); }
   });
 
@@ -276,9 +279,11 @@ module.exports = function createTaskRouter(auth) {
       if (!task || !(await canChangeTaskStatus(task, req.user._id))) {
         return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
       }
+      const beforeStatus = task.status;
       task.status = status;
       await task.save();
-      return res.json({ message: 'Cập nhật trạng thái thành công.', task: await clientTask(task) });
+      const completionNotification = await notifyTaskCompleted(task, beforeStatus, req.user._id);
+      return res.json({ message: 'Cập nhật trạng thái thành công.', task: await clientTask(task), completionNotification });
     } catch (error) { return error500(res, error); }
   });
 
