@@ -7,6 +7,7 @@ const Task = require('./models/Task');
 const TaskShare = require('./models/TaskShare');
 const { newAssignmentRecipients, notifyNewAssignees } = require('./d1Email');
 const { notifyNewShare } = require('./d2Email');
+const { snapshotImportantFields, notifyImportantTaskChanges } = require('./d3Email');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
@@ -252,13 +253,15 @@ module.exports = function createTaskRouter(auth) {
         ...(req.body || {})
       });
       if (check.error) return res.status(400).json({ message: check.error });
+      const beforeImportant = snapshotImportantFields(task);
       Object.assign(task, {
         title: check.fields.title, description: check.fields.description,
         status: check.fields.status, priority: check.fields.priority,
         startDate: dateAsMongo(check.fields.startDate), dueDate: dateAsMongo(check.fields.dueDate)
       });
       await task.save();
-      return res.json({ message: 'Cập nhật công việc thành công.', task: await clientTask(task) });
+      const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
+      return res.json({ message: 'Cập nhật công việc thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
 
@@ -290,9 +293,11 @@ module.exports = function createTaskRouter(auth) {
       if (!task || !(await canEditTask(task, req.user._id))) {
         return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
       }
+      const beforeImportant = snapshotImportantFields(task);
       task.priority = priority;
       await task.save();
-      return res.json({ message: 'Cập nhật mức độ ưu tiên thành công.', task: await clientTask(task) });
+      const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
+      return res.json({ message: 'Cập nhật mức độ ưu tiên thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
 
@@ -314,10 +319,12 @@ module.exports = function createTaskRouter(auth) {
         startDate: body.startDate, dueDate: body.dueDate
       });
       if (check.error) return res.status(400).json({ message: check.error });
+      const beforeImportant = snapshotImportantFields(task);
       task.startDate = dateAsMongo(check.fields.startDate);
       task.dueDate = dateAsMongo(check.fields.dueDate);
       await task.save();
-      return res.json({ message: 'Cập nhật ngày bắt đầu và hạn hoàn thành thành công.', task: await clientTask(task) });
+      const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
+      return res.json({ message: 'Cập nhật ngày bắt đầu và hạn hoàn thành thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
 
