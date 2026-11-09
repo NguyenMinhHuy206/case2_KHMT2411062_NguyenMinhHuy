@@ -9,6 +9,7 @@ const { newAssignmentRecipients, notifyNewAssignees } = require('./d1Email');
 const { notifyNewShare } = require('./d2Email');
 const { snapshotImportantFields, notifyImportantTaskChanges } = require('./d3Email');
 const { notifyTaskCompleted } = require('./d4Email');
+const d7 = require('./d7Notify');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
@@ -264,6 +265,9 @@ module.exports = function createTaskRouter(auth) {
       await task.save();
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
       const completionNotification = await notifyTaskCompleted(task, beforeStatus, req.user._id);
+      await d7.notifyImportantChange(task, beforeImportant, req.user._id);
+      await d7.notifyCompletion(task, beforeStatus, req.user._id);
+      await d7.notifyStatus(task, beforeStatus, req.user._id);
       return res.json({ message: 'Cập nhật công việc thành công.', task: await clientTask(task), emailNotification, completionNotification });
     } catch (error) { return error500(res, error); }
   });
@@ -283,6 +287,8 @@ module.exports = function createTaskRouter(auth) {
       task.status = status;
       await task.save();
       const completionNotification = await notifyTaskCompleted(task, beforeStatus, req.user._id);
+      await d7.notifyCompletion(task, beforeStatus, req.user._id);
+      await d7.notifyStatus(task, beforeStatus, req.user._id);
       return res.json({ message: 'Cập nhật trạng thái thành công.', task: await clientTask(task), completionNotification });
     } catch (error) { return error500(res, error); }
   });
@@ -302,6 +308,7 @@ module.exports = function createTaskRouter(auth) {
       task.priority = priority;
       await task.save();
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
+      await d7.notifyImportantChange(task, beforeImportant, req.user._id);
       return res.json({ message: 'Cập nhật mức độ ưu tiên thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
@@ -329,6 +336,7 @@ module.exports = function createTaskRouter(auth) {
       task.dueDate = dateAsMongo(check.fields.dueDate);
       await task.save();
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
+      await d7.notifyImportantChange(task, beforeImportant, req.user._id);
       return res.json({ message: 'Cập nhật ngày bắt đầu và hạn hoàn thành thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
@@ -417,6 +425,7 @@ module.exports = function createTaskRouter(auth) {
       // Assignment succeeds even if SMTP is not configured or sending fails.
       // The email_logs collection records the truthful delivery state.
       const emailNotification = await notifyNewAssignees(task, newlyAssigned);
+      await d7.notifyAssignment(task, newlyAssigned);
       return res.json({ message: 'Giao việc thành công.', task: await clientTask(task), emailNotification });
     } catch (error) { return error500(res, error); }
   });
@@ -496,6 +505,7 @@ module.exports = function createTaskRouter(auth) {
       // Existing shares (409) and failed share creation do not send anything.
       // SMTP failure never rolls back the sharing permission saved in C3/C4.
       const emailNotification = await notifyNewShare(task, recipient, share.permission);
+      await d7.notifyShare(task, recipient, share.permission);
       return res.status(201).json({
         message: 'Chia se cong viec thanh cong.',
         emailNotification,

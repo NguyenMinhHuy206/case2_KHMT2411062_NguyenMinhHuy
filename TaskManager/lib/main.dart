@@ -8,6 +8,7 @@ part 'c_features/c2_primary.dart';
 part 'c_features/c3_share.dart';
 part 'c_features/c5_members.dart';
 part 'c_features/c7_progress.dart';
+part 'd7_notifications.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -475,6 +476,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? user;
   bool loading = true;
   List<dynamic>? taskItems;
+  int unreadNotifications = 0;
 
   @override
   void initState() {
@@ -491,6 +493,7 @@ class _HomeScreenState extends State<HomeScreen> {
         loading = false;
       });
       await reloadStats();
+      await reloadUnreadNotifications();
     } catch (e) {
       if (!mounted) return;
       showError(context, e);
@@ -507,6 +510,23 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       if (mounted) setState(() => taskItems = null);
     }
+  }
+
+  Future<void> reloadUnreadNotifications() async {
+    try {
+      final result = await Api.request('GET', '/api/notifications');
+      if (mounted) {
+        setState(() => unreadNotifications = (result['unreadCount'] as num?)?.toInt() ?? 0);
+      }
+    } catch (_) {
+      // D7 is independent from account access and existing task screens.
+    }
+  }
+
+  Future<void> openNotifications() async {
+    await Navigator.push(context,
+      MaterialPageRoute(builder: (_) => const D7NotificationsScreen()));
+    if (mounted) await reloadUnreadNotifications();
   }
 
   Future<void> logout() async {
@@ -610,6 +630,15 @@ class _HomeScreenState extends State<HomeScreen> {
           Text('TaskManager'),
         ]),
         actions: [
+          IconButton(
+            tooltip: 'Thông báo trong ứng dụng${unreadNotifications > 0 ? ' ($unreadNotifications chưa đọc)' : ''}',
+            onPressed: openNotifications,
+            icon: Badge(
+              isLabelVisible: unreadNotifications > 0,
+              label: Text(unreadNotifications > 99 ? '99+' : '$unreadNotifications'),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+          ),
           IconButton(tooltip: 'Làm mới thống kê', onPressed: reloadStats,
             icon: const Icon(Icons.refresh_rounded)),
           IconButton(tooltip: 'Đăng xuất', onPressed: logout,
@@ -670,6 +699,8 @@ class _HomeScreenState extends State<HomeScreen> {
               TextButton(onPressed: openTasks, child: const Text('Xem tất cả')),
             ]),
             const SizedBox(height: 4),
+            actionTile('Thông báo trong ứng dụng', 'Xem thông báo mới và đã đọc',
+              Icons.notifications_active_outlined, const Color(0xFF4F74D8), openNotifications),
             actionTile('Danh sách công việc', 'Xem, tìm kiếm và lọc công việc',
               Icons.view_list_rounded, const Color(0xFF3867D6), openTasks),
             actionTile('Tiến độ theo vai trò', 'Theo dõi việc tạo, được giao và được chia sẻ',
