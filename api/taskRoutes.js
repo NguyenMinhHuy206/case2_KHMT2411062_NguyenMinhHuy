@@ -6,6 +6,7 @@ const User = require('./models/User');
 const Task = require('./models/Task');
 const TaskShare = require('./models/TaskShare');
 const { newAssignmentRecipients, notifyNewAssignees } = require('./d1Email');
+const { notifyNewShare } = require('./d2Email');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
@@ -479,8 +480,13 @@ module.exports = function createTaskRouter(auth) {
         sharedBy: req.user._id,
         permission
       });
+      // D2: Only the first successful new share triggers email.
+      // Existing shares (409) and failed share creation do not send anything.
+      // SMTP failure never rolls back the sharing permission saved in C3/C4.
+      const emailNotification = await notifyNewShare(task, recipient, share.permission);
       return res.status(201).json({
         message: 'Chia se cong viec thanh cong.',
+        emailNotification,
         share: {
           id: String(share._id),
           userId: publicUserId(recipient),
