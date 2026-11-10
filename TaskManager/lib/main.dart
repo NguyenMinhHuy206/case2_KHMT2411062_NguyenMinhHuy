@@ -9,6 +9,7 @@ part 'c_features/c3_share.dart';
 part 'c_features/c5_members.dart';
 part 'c_features/c7_progress.dart';
 part 'd7_notifications.dart';
+part 'e1_statistics.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -703,6 +704,13 @@ class _HomeScreenState extends State<HomeScreen> {
               Icons.notifications_active_outlined, const Color(0xFF4F74D8), openNotifications),
             actionTile('Danh sách công việc', 'Xem, tìm kiếm và lọc công việc',
               Icons.view_list_rounded, const Color(0xFF3867D6), openTasks),
+            actionTile('Thống kê và tiện ích', 'Tổng số công việc theo trạng thái',
+              Icons.bar_chart_rounded, const Color(0xFF3867D6), () async {
+                await Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => const E1StatisticsScreen(),
+                ));
+                if (mounted) await reloadStats();
+              }),
             actionTile('Tiến độ theo vai trò', 'Theo dõi việc tạo, được giao và được chia sẻ',
               Icons.insights_outlined, const Color(0xFF4B72B8), () async {
                 await Navigator.push(context, MaterialPageRoute(
