@@ -10,6 +10,7 @@ const { notifyNewShare } = require('./d2Email');
 const { snapshotImportantFields, notifyImportantTaskChanges } = require('./d3Email');
 const { notifyTaskCompleted } = require('./d4Email');
 const d7 = require('./d7Notify');
+const TaskActivity = require('./models/TaskActivity');
 
 module.exports = function createTaskRouter(auth) {
   const router = express.Router();
@@ -220,7 +221,83 @@ module.exports = function createTaskRouter(auth) {
         startDate: dateAsMongo(fields.startDate), dueDate: dateAsMongo(fields.dueDate),
         createdBy: req.user._id, assigneeIds: [], primaryAssigneeId: null
       });
+      await writeActivity(task, req.user._id, 'created', 'Đã tạo công việc');
       return res.status(201).json({ message: 'Tạo công việc thành công.', task: await clientTask(task) });
+    } catch (error) { return error500(res, error); }
+  });
+
+
+  // E4: Write activity after an authorized business operation is persisted.
+  // An activity collection failure must not roll back an already-saved task,
+  // or break the existing A-D behavior. The failure is recorded in server logs.
+  async function writeActivity(task, actorId, action, summary) {
+    try {
+      // Reuse the project's existing TaskActivity schema and task_activities collection.
+      await TaskActivity.create({
+        taskId: task._id,
+        userId: actorId,
+        action,
+        details: { summary: String(summary).slice(0, 300) }
+      });
+    } catch (error) {
+      console.error('E4_ACTIVITY_LOG_ERROR:', error?.code || error?.message || 'unknown');
+    }
+  }
+
+  function textDate(value) { return dateOnly(value) || 'chưa đặt'; }
+  function textStatus(value) {
+    return ({ pending: 'Chưa thực hiện', in_progress: 'Đang thực hiện',
+      completed: 'Đã hoàn thành', todo: 'Chưa thực hiện' })[value] || String(value);
+  }
+  function textPriority(value) {
+    return ({ low: 'Thấp', medium: 'Trung bình', high: 'Cao' })[value] || String(value);
+  }
+  function summarizeUpdate(before, after) {
+    const changes = [];
+    if (before.title !== after.title) changes.push('tiêu đề');
+    if (before.description !== after.description) changes.push('mô tả');
+    if (before.status !== after.status) changes.push(`trạng thái: ${textStatus(before.status)} → ${textStatus(after.status)}`);
+    if (before.priority !== after.priority) changes.push(`ưu tiên: ${textPriority(before.priority)} → ${textPriority(after.priority)}`);
+    if (textDate(before.startDate) !== textDate(after.startDate)) changes.push(`ngày bắt đầu: ${textDate(before.startDate)} → ${textDate(after.startDate)}`);
+    if (textDate(before.dueDate) !== textDate(after.dueDate)) changes.push(`hạn hoàn thành: ${textDate(before.dueDate)} → ${textDate(after.dueDate)}`);
+    return changes.length ? `Đã cập nhật ${changes.join('; ')}` : null;
+  }
+
+  // Only an existing authorized reader can view a task's history.
+  // Page size is bounded to prevent accidentally returning unbounded data.
+  router.get('/:id/activities', auth, async (req, res) => {
+    try {
+      const task = await taskForRequest(req.params.id, req.user._id);
+      if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền xem lịch sử.' });
+      const page = Number(req.query.page ?? 1);
+      const limit = Number(req.query.limit ?? 30);
+      if (!Number.isSafeInteger(page) || page < 1 || page > 100000 ||
+          !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ message: 'page hoặc limit không hợp lệ.' });
+      }
+      const filter = { taskId: task._id };
+      const [total, entries] = await Promise.all([
+        TaskActivity.countDocuments(filter),
+        TaskActivity.find(filter).sort({ createdAt: -1, _id: -1 })
+          .skip((page - 1) * limit).limit(limit).lean()
+      ]);
+      const actorIds = [...new Set(entries.map(row => row.userId && String(row.userId)).filter(Boolean))];
+      const actors = actorIds.length
+        ? await User.find({ _id: { $in: actorIds } }).select('_id fullName').lean()
+        : [];
+      const actorNames = new Map(actors.map(user => [String(user._id), user.fullName]));
+      return res.json({
+        taskId: publicTaskId(task), page, limit, total,
+        hasMore: page * limit < total,
+        activities: entries.map(row => ({
+          id: String(row._id),
+          action: row.action,
+          summary: typeof row.details?.summary === 'string' ? row.details.summary
+            : (typeof row.details?.message === 'string' ? row.details.message : 'Đã cập nhật công việc'),
+          actorName: actorNames.get(String(row.userId)) || 'Tài khoản đã xóa',
+          createdAt: row.createdAt
+        }))
+      });
     } catch (error) { return error500(res, error); }
   });
 
@@ -257,12 +334,19 @@ module.exports = function createTaskRouter(auth) {
       if (check.error) return res.status(400).json({ message: check.error });
       const beforeStatus = task.status;
       const beforeImportant = snapshotImportantFields(task);
+      const beforeActivity = {
+        title: task.title, description: task.description,
+        status: task.status, priority: task.priority,
+        startDate: task.startDate, dueDate: task.dueDate
+      };
       Object.assign(task, {
         title: check.fields.title, description: check.fields.description,
         status: check.fields.status, priority: check.fields.priority,
         startDate: dateAsMongo(check.fields.startDate), dueDate: dateAsMongo(check.fields.dueDate)
       });
       await task.save();
+      const activitySummary = summarizeUpdate(beforeActivity, task);
+      if (activitySummary) await writeActivity(task, req.user._id, 'updated', activitySummary);
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
       const completionNotification = await notifyTaskCompleted(task, beforeStatus, req.user._id);
       await d7.notifyImportantChange(task, beforeImportant, req.user._id);
@@ -286,6 +370,10 @@ module.exports = function createTaskRouter(auth) {
       const beforeStatus = task.status;
       task.status = status;
       await task.save();
+      if (beforeStatus !== task.status) {
+        await writeActivity(task, req.user._id, 'status_changed',
+          `Đã đổi trạng thái: ${textStatus(beforeStatus)} → ${textStatus(task.status)}`);
+      }
       const completionNotification = await notifyTaskCompleted(task, beforeStatus, req.user._id);
       await d7.notifyCompletion(task, beforeStatus, req.user._id);
       await d7.notifyStatus(task, beforeStatus, req.user._id);
@@ -305,8 +393,13 @@ module.exports = function createTaskRouter(auth) {
         return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền cập nhật.' });
       }
       const beforeImportant = snapshotImportantFields(task);
+      const beforePriority = task.priority;
       task.priority = priority;
       await task.save();
+      if (beforePriority !== task.priority) {
+        await writeActivity(task, req.user._id, 'priority_changed',
+          `Đã đổi ưu tiên: ${textPriority(beforePriority)} → ${textPriority(task.priority)}`);
+      }
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
       await d7.notifyImportantChange(task, beforeImportant, req.user._id);
       return res.json({ message: 'Cập nhật mức độ ưu tiên thành công.', task: await clientTask(task), emailNotification });
@@ -332,9 +425,15 @@ module.exports = function createTaskRouter(auth) {
       });
       if (check.error) return res.status(400).json({ message: check.error });
       const beforeImportant = snapshotImportantFields(task);
+      const beforeStart = textDate(task.startDate);
+      const beforeDue = textDate(task.dueDate);
       task.startDate = dateAsMongo(check.fields.startDate);
       task.dueDate = dateAsMongo(check.fields.dueDate);
       await task.save();
+      if (beforeStart !== textDate(task.startDate) || beforeDue !== textDate(task.dueDate)) {
+        await writeActivity(task, req.user._id, 'dates_changed',
+          `Ngày bắt đầu: ${beforeStart} → ${textDate(task.startDate)}; hạn hoàn thành: ${beforeDue} → ${textDate(task.dueDate)}`);
+      }
       const emailNotification = await notifyImportantTaskChanges(task, beforeImportant, req.user._id);
       await d7.notifyImportantChange(task, beforeImportant, req.user._id);
       return res.json({ message: 'Cập nhật ngày bắt đầu và hạn hoàn thành thành công.', task: await clientTask(task), emailNotification });
@@ -348,6 +447,7 @@ module.exports = function createTaskRouter(auth) {
         ...idFilter(req.params.id), createdBy: req.user._id
       });
       if (!task) return res.status(404).json({ message: 'Không tìm thấy công việc hoặc bạn không có quyền xóa.' });
+      await writeActivity(task, req.user._id, 'deleted', 'Đã xóa công việc');
       return res.json({ message: 'Xóa công việc thành công.' });
     } catch (error) { return error500(res, error); }
   });
@@ -416,12 +516,18 @@ module.exports = function createTaskRouter(auth) {
       }
       // D1: Only newly assigned users receive a task-assignment email.
       // Saving exactly the same list must not trigger duplicate notifications.
+      const previouslyAssigned = (task.assigneeIds || []).map(id => String(id));
       const newlyAssigned = newAssignmentRecipients(task.assigneeIds || [], assignees);
       task.assigneeIds = assignees.map(u => u._id);
       if (task.primaryAssigneeId && !task.assigneeIds.some(id => String(id) === String(task.primaryAssigneeId))) {
         task.primaryAssigneeId = null;
       }
       await task.save();
+      const nextAssigned = task.assigneeIds.map(id => String(id));
+      const added = nextAssigned.filter(id => !previouslyAssigned.includes(id)).length;
+      const removed = previouslyAssigned.filter(id => !nextAssigned.includes(id)).length;
+      if (added || removed) await writeActivity(task, req.user._id, 'assignees_changed',
+        `Đã cập nhật người được giao: thêm ${added}, gỡ ${removed}`);
       // Assignment succeeds even if SMTP is not configured or sending fails.
       // The email_logs collection records the truthful delivery state.
       const emailNotification = await notifyNewAssignees(task, newlyAssigned);
@@ -504,6 +610,8 @@ module.exports = function createTaskRouter(auth) {
       // D2: Only the first successful new share triggers email.
       // Existing shares (409) and failed share creation do not send anything.
       // SMTP failure never rolls back the sharing permission saved in C3/C4.
+      await writeActivity(task, req.user._id, 'share_added',
+        `Đã chia sẻ với ${recipient.fullName || 'thành viên'} (quyền ${permission})`);
       const emailNotification = await notifyNewShare(task, recipient, share.permission);
       await d7.notifyShare(task, recipient, share.permission);
       return res.status(201).json({
@@ -545,6 +653,7 @@ module.exports = function createTaskRouter(auth) {
         return res.status(400).json({ message: 'Quyền phải là viewer hoặc editor.' });
       }
 
+      const beforeShare = await TaskShare.findOne({ _id: req.params.shareId, taskId: task._id }).lean();
       const share = await TaskShare.findOneAndUpdate(
         { _id: req.params.shareId, taskId: task._id },
         { $set: { permission } },
@@ -552,6 +661,10 @@ module.exports = function createTaskRouter(auth) {
       ).lean();
       if (!share) {
         return res.status(404).json({ message: 'Không tìm thấy quyền chia sẻ trong công việc này.' });
+      }
+      if (beforeShare && beforeShare.permission !== share.permission) {
+        await writeActivity(task, req.user._id, 'share_permission_changed',
+          `Đã đổi quyền chia sẻ: ${beforeShare.permission} → ${share.permission}`);
       }
       return res.json({
         message: 'Đã cập nhật quyền chia sẻ.',
@@ -578,6 +691,7 @@ module.exports = function createTaskRouter(auth) {
       if (!share) {
         return res.status(404).json({ message: 'Không tìm thấy quyền chia sẻ trong công việc này.' });
       }
+      await writeActivity(task, req.user._id, 'share_revoked', 'Đã thu hồi quyền chia sẻ');
       return res.json({
         message: 'Đã thu hồi quyền chia sẻ.',
         revokedShareId: String(share._id)
@@ -607,6 +721,7 @@ module.exports = function createTaskRouter(auth) {
           message: 'Only the task creator can set the primary assignee.'
         });
       }
+      const previousPrimary = task.primaryAssigneeId == null ? null : String(task.primaryAssigneeId);
 
       if (body.userId === null) {
         task.primaryAssigneeId = null;
@@ -636,6 +751,11 @@ module.exports = function createTaskRouter(auth) {
       }
 
       await task.save();
+      const currentPrimary = task.primaryAssigneeId == null ? null : String(task.primaryAssigneeId);
+      if (previousPrimary !== currentPrimary) {
+        await writeActivity(task, req.user._id, 'primary_changed',
+          currentPrimary ? 'Đã thay đổi người phụ trách chính' : 'Đã bỏ người phụ trách chính');
+      }
 
       return res.json({
         message: 'Primary assignee updated successfully.',

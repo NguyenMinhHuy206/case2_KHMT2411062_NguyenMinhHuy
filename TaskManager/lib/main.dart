@@ -12,6 +12,7 @@ part 'd7_notifications.dart';
 part 'e1_statistics.dart';
 part 'e2_assignments.dart';
 part 'e3_deadlines.dart';
+part 'e4_activities.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 
@@ -1783,6 +1784,21 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
                icon: const Icon(Icons.groups_outlined),
                label: const Text('C5 - Danh sách người được giao và chia sẻ'),
              ),
+             // E4: All authorized task readers can view the activity timeline.
+             OutlinedButton.icon(
+               onPressed: _deleting ? null : () {
+                 Navigator.push<void>(
+                   context,
+                   MaterialPageRoute(builder: (_) => E4ActivitiesScreen(
+                     taskId: widget.taskId,
+                     taskTitle: (_task!['title'] ?? '').toString(),
+                   )),
+                 );
+               },
+               icon: const Icon(Icons.history_rounded),
+               label: const Text('E4 - Lịch sử hoạt động công việc'),
+             ),
+             const SizedBox(height: 10),
              // D6: Chỉ người tạo công việc xem được lịch sử gửi email.
              if (_canManage) const SizedBox(height: 10),
              if (_canManage) OutlinedButton.icon(
