@@ -184,6 +184,7 @@ app.post('/logout', auth, async (req, res) => {
 app.use('/api/tasks', require('./taskRoutes')(auth));
 app.use('/api/notifications', require('./d7Notifications')(auth));
 app.use('/api/statistics', require('./e1Statistics')(auth));
+app.use('/api/statistics', require('./e2Statistics')(auth));
 const { startDueReminderScheduler } = require('./d5Reminder');
 
 // Chi mo cong sau khi MongoDB ket noi thanh cong.

@@ -10,6 +10,7 @@ part 'c_features/c5_members.dart';
 part 'c_features/c7_progress.dart';
 part 'd7_notifications.dart';
 part 'e1_statistics.dart';
+part 'e2_assignments.dart';
 
 void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const TaskManagerApp()); }
 

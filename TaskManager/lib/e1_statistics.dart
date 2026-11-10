@@ -86,7 +86,7 @@ class _E1StatisticsScreenState extends State<E1StatisticsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Thống kê theo trạng thái'),
+        title: const Text('Thống kê và tiện ích'),
         actions: [
           IconButton(
             tooltip: 'Làm mới thống kê',
@@ -140,6 +140,8 @@ class _E1StatisticsScreenState extends State<E1StatisticsScreen> {
                       if ((_byStatus['other'] ?? 0) > 0)
                         _statusCard('Trạng thái khác', 'other',
                           const Color(0xFFB05ABB), Icons.help_outline_rounded),
+                      const SizedBox(height: 18),
+                      const E2AssignmentsSection(),
                       if (_total == 0)
                         const Padding(
                           padding: EdgeInsets.only(top: 16),
