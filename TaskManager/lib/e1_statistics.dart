@@ -142,6 +142,8 @@ class _E1StatisticsScreenState extends State<E1StatisticsScreen> {
                           const Color(0xFFB05ABB), Icons.help_outline_rounded),
                       const SizedBox(height: 18),
                       const E2AssignmentsSection(),
+                      const SizedBox(height: 18),
+                      const E3DeadlinesSection(),
                       if (_total == 0)
                         const Padding(
                           padding: EdgeInsets.only(top: 16),
