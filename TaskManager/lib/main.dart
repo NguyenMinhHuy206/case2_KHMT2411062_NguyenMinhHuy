@@ -479,6 +479,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? user;
   bool loading = true;
+  bool _statsLoading = false;
   List<dynamic>? taskItems;
   int unreadNotifications = 0;
 
@@ -507,15 +508,39 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> reloadStats() async {
+    if (_statsLoading || !mounted) return;
+
+    setState(() => _statsLoading = true);
+
     try {
       final result = await Api.request('GET', '/api/tasks');
       final items = result['tasks'];
-      if (mounted) setState(() => taskItems = items is List ? items : null);
-    } catch (_) {
-      if (mounted) setState(() => taskItems = null);
+
+      if (mounted) {
+        setState(() => taskItems = items is List ? items : null);
+      }
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() => taskItems = null);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Không tải được thống kê công việc.'),
+          backgroundColor: Colors.red.shade700,
+          action: SnackBarAction(
+            label: 'Thử lại',
+            textColor: Colors.white,
+            onPressed: reloadStats,
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _statsLoading = false);
+      }
     }
   }
-
   Future<void> reloadUnreadNotifications() async {
     try {
       final result = await Api.request('GET', '/api/notifications');
@@ -643,8 +668,17 @@ class _HomeScreenState extends State<HomeScreen> {
               child: const Icon(Icons.notifications_outlined),
             ),
           ),
-          IconButton(tooltip: 'Làm mới thống kê', onPressed: reloadStats,
-            icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            tooltip: 'Làm mới thống kê',
+            onPressed: _statsLoading ? null : reloadStats,
+            icon: _statsLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+          ),
           IconButton(tooltip: 'Đăng xuất', onPressed: logout,
             icon: const Icon(Icons.logout_rounded)),
         ],
